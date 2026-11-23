@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>솔내마당</title>
+<link rel="icon" type="image/png" href="img/favicon.png">
+<style>
+  :root {
+    --desk: #2b2622;
+    --desk-2: #1d1a17;
+    --paper: #f6f1e7;
+    --ink: #1c1a18;
+    --line: rgba(255,255,255,.14);
+    --text: #efe8db;
+    --muted: #a99f90;
+    --accent: #c9a36a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    color: var(--text);
+    background: radial-gradient(ellipse at 50% 35%, #3a332d 0%, var(--desk) 45%, var(--desk-2) 100%);
+    display: flex; flex-direction: column;
+    height: 100dvh; overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 위쪽 바 */
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+    border-bottom: 1px solid var(--line);
+    flex: none;
+  }
+  .picker { position: relative; flex: none; max-width: 62vw; }
+  .picker select {
+    appearance: none; -webkit-appearance: none;
+    font: inherit; font-size: 15px; font-weight: 600;
+    color: var(--text); background: rgba(255,255,255,.07);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 34px 9px 12px; max-width: 100%;
+    text-overflow: ellipsis; cursor: pointer;
+  }
+  .picker select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .picker option { color: #111; }
+  .picker::after {
+    content: ""; position: absolute; right: 13px; top: 50%;
+    width: 7px; height: 7px; margin-top: -6px;
+    border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+    transform: rotate(45deg); pointer-events: none;
+  }
+  .brand { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 14px; }
+  .brand img { height: 36px; width: auto; flex: none; display: block; }
+  .brand .emblem { display: none; }
+  .brand .rule { width: 1px; height: 26px; background: var(--line); flex: none; }
+  .brand [hidden] { display: none !important; }
+  .masthead {
+    text-align: right;
+    font-family: "Nanum Myeongjo", "Noto Serif KR", "Batang", serif;
+    font-size: 18px; font-weight: 800; letter-spacing: .04em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* 신문이 놓이는 자리 */
+  main { flex: 1; min-height: 0; position: relative; padding: 14px 10px; }
+  #stage {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #book { flex: none; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
+  .page { background: var(--paper); overflow: hidden; }
+  .page img {
+    width: 100%; height: 100%; display: block; object-fit: fill;
+    pointer-events: none; user-select: none; -webkit-user-drag: none;
+  }
+  /* 접히는 안쪽(가운데) 그늘 */
+  .page::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+  }
+  .page.--left::after  { background: linear-gradient(to left,  rgba(0,0,0,.20), rgba(0,0,0,.05) 4%, transparent 11%); }
+  .page.--right::after { background: linear-gradient(to right, rgba(0,0,0,.20), rgba(0,0,0,.05) 4%, transparent 11%); }
+
+  /* 불러오는 중 / 안내 */
+  #status {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    text-align: center; padding: 24px; color: var(--muted); font-size: 15px;
+  }
+  #status[hidden] { display: none; }
+  .bar { width: min(240px, 60vw); height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+  /* 아래쪽 조작 바 */
+  .controls {
+    flex: none; display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 8px 12px;
+  }
+  .controls button, .controls a {
+    font: inherit; font-size: 14px; color: var(--text); text-decoration: none;
+    background: rgba(255,255,255,.07); border: 1px solid var(--line);
+    border-radius: 8px; min-width: 44px; height: 44px; padding: 0 14px;
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .controls button:disabled { opacity: .35; cursor: default; }
+  .controls button:focus-visible, .controls a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .controls [hidden] { display: none; }
+  #pageInfo { min-width: 92px; text-align: center; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .gap { width: 8px; }
+
+  footer {
+    flex: none; text-align: center; font-size: 11px; color: var(--muted);
+    padding: 2px 12px calc(8px + env(safe-area-inset-bottom));
+  }
+
+  @media (max-width: 760px) {
+    .brand { gap: 9px; }
+    .brand .full, .brand .rule { display: none; }
+    .brand .emblem { display: block; height: 34px; }
+  }
+  @media (max-width: 520px) {
+    .masthead { font-size: 15px; }
+    main { padding: 10px 6px; }
+    .controls .label { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { #book { flex: none; transition: none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="picker">
+    <select id="issueSelect" aria-label="신문 호 선택"></select>
+  </div>
+  <div class="brand">
+    <img class="full" id="logoFull" alt="" hidden>
+    <img class="emblem" id="logoEmblem" alt="" hidden>
+    <span class="rule" id="logoRule" hidden></span>
+    <div class="masthead" id="masthead">솔내마당</div>
+  </div>
+</header>
+
+<main>
+  <div id="stage"></div>
+  <div id="status">
+    <div id="statusText">신문을 펼치는 중…</div>
+    <div class="bar" id="statusBar"><i></i></div>
+  </div>
+</main>
+
+<div class="controls">
+  <button id="prevBtn" aria-label="이전 면">◀</button>
+  <div id="pageInfo" aria-live="polite">–</div>
+  <button id="nextBtn" aria-label="다음 면">▶</button>
+  <span class="gap"></span>
+  <button id="fullBtn" aria-label="전체 화면">⛶<span class="label">&nbsp;전체 화면</span></button>
+  <a id="pdfLink" target="_blank" rel="noopener" hidden>PDF<span class="label">&nbsp;원본</span></a>
+</div>
+
+<footer><span id="copyright"></span> · v1.1.1</footer>
+
+<script src="issues.js"></script>
+<script src="lib/page-flip.browser.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var SITE = window.SITE || {};
+  var ISSUES = (window.ISSUES || []).filter(function (x) { return x && x.title && x.file; });
+  var DEMO = { title: "견본 신문 (PDF를 올리면 사라집니다)", demo: true };
+  if (!ISSUES.length) ISSUES = [DEMO];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var stage = $("stage"), statusBox = $("status"), statusText = $("statusText"),
+      statusBar = $("statusBar"), select = $("issueSelect"),
+      prevBtn = $("prevBtn"), nextBtn = $("nextBtn"), pageInfo = $("pageInfo"),
+      pdfLink = $("pdfLink"), fullBtn = $("fullBtn");
+
+  document.title = [SITE.school, SITE.name || "학교신문"].filter(Boolean).join(" ");
+  if (SITE.logo) {
+    var lf = $("logoFull"), le = $("logoEmblem");
+    lf.src = SITE.logo; le.src = SITE.emblem || SITE.logo;
+    lf.alt = le.alt = SITE.school || "학교 로고";
+    lf.hidden = le.hidden = false; $("logoRule").hidden = false;
+    lf.onerror = le.onerror = function () { this.hidden = true; $("logoRule").hidden = true; };
+  }
+  $("masthead").textContent = SITE.name || "학교신문";
+  $("copyright").textContent = "© " + new Date().getFullYear() + " " + (SITE.school || SITE.name || "");
+
+  var cache = new Map();   // 호별로 만들어 둔 면 그림
+  var current = null;      // { urls, ratio }
+  var flip = null;         // 넘김 효과 객체
+  var landscape = true;
+  var pageIndex = 0;
+  var loadToken = 0;
+
+  /* ── 목록(드롭다운) ── */
+  ISSUES.forEach(function (it, i) {
+    var o = document.createElement("option");
+    o.value = i; o.textContent = it.title;
+    select.appendChild(o);
+  });
+  select.addEventListener("change", function () { openIssue(+select.value); });
+
+  /* ── 상태 표시 ── */
+  function showStatus(msg, progress) {
+    statusBox.hidden = false;
+    statusText.textContent = msg;
+    statusBar.style.display = progress == null ? "none" : "";
+    if (progress != null) statusBar.firstElementChild.style.width = Math.round(progress * 100) + "%";
+  }
+  function hideStatus() { statusBox.hidden = true; }
+
+  /* ── PDF 읽기 도구는 필요할 때만 불러온다 ── */
+  var pdfReady = null;
+  function loadPdfLib() {
+    if (!pdfReady) pdfReady = new Promise(function (ok, fail) {
+      var s = document.createElement("script");
+      s.src = "lib/pdf.min.js";
+      s.onload = function () {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = "lib/pdf.worker.min.js";
+        ok(window.pdfjsLib);
+      };
+      s.onerror = function () { fail(new Error("PDF 도구를 불러오지 못했습니다.")); };
+      document.head.appendChild(s);
+    });
+    return pdfReady;
+  }
+
+  /* ── PDF의 각 면을 그림으로 바꾼다 ── */
+  async function renderPdf(file, token) {
+    var lib = await loadPdfLib();
+    var pdf = await lib.getDocument({ url: file, cMapUrl: "lib/cmaps/", cMapPacked: true }).promise;
+    var urls = [], ratio = 0.7;
+    var targetW = Math.min(1800, Math.max(1100, Math.round(window.innerWidth * (window.devicePixelRatio || 1))));
+    for (var n = 1; n <= pdf.numPages; n++) {
+      if (token !== loadToken) return null;
+      showStatus("신문을 펼치는 중… (" + n + " / " + pdf.numPages + "면)", (n - 1) / pdf.numPages);
+      var page = await pdf.getPage(n);
+      var base = page.getViewport({ scale: 1 });
+      if (n === 1) ratio = base.width / base.height;
+      var vp = page.getViewport({ scale: targetW / base.width });
+      var cv = document.createElement("canvas");
+      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+      var blob = await new Promise(function (r) { cv.toBlob(r, "image/jpeg", 0.9); });
+      urls.push(URL.createObjectURL(blob));
+      cv.width = cv.height = 0;
+      page.cleanup();
+    }
+    return { urls: urls, ratio: ratio };
+  }
+
+  /* ── 견본 신문 (올린 PDF가 없을 때) ── */
+  function renderDemo() {
+    var W = 1000, H = 1414, urls = [], total = 8;
+    var serif = '"Nanum Myeongjo","Noto Serif KR","Batang",serif';
+    for (var p = 1; p <= total; p++) {
+      var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+      var c = cv.getContext("2d");
+      c.fillStyle = "#f6f1e7"; c.fillRect(0, 0, W, H);
+      c.fillStyle = "#1c1a18"; c.textBaseline = "top";
+      var y = 60;
+      if (p === 1) {
+        c.textAlign = "center"; c.font = "800 96px " + serif;
+        c.fillText(SITE.name || "학교신문", W / 2, y); y += 130;
+        c.fillRect(60, y, W - 120, 6); y += 14; c.fillRect(60, y, W - 120, 2); y += 16;
+        c.font = "22px sans-serif"; c.textAlign = "left"; c.fillText("견본 · 제0호", 60, y);
+        c.textAlign = "right"; c.fillText(SITE.school || "", W - 60, y); y += 50;
+      } else {
+        c.font = "22px sans-serif"; c.textAlign = p % 2 ? "right" : "left";
+        c.fillText(p + "면", p % 2 ? W - 60 : 60, y); y += 36;
+        c.fillRect(60, y, W - 120, 2); y += 30;
+      }
+      c.textAlign = "left"; c.font = "800 54px " + serif;
+      c.fillText("견본 기사 제목 " + p, 60, y); y += 90;
+      c.fillStyle = "#cfc7b8"; c.fillRect(60, y, W - 120, 300);
+      c.fillStyle = "#8d8474"; c.font = "26px sans-serif"; c.textAlign = "center";
+      c.fillText("사진 자리", W / 2, y + 136); y += 330;
+      c.fillStyle = "#9b9385";
+      var cols = 3, gap = 30, cw = (W - 120 - gap * (cols - 1)) / cols;
+      for (var k = 0; k < cols; k++) {
+        for (var ly = y, i = 0; ly < H - 80; ly += 24, i++) {
+          var w = (i % 7 === 6) ? cw * 0.55 : cw;
+          c.fillRect(60 + k * (cw + gap), ly, w, 9);
+        }
+      }
+      urls.push(cv.toDataURL("image/jpeg", 0.85));
+    }
+    return { urls: urls, ratio: W / H };
+  }
+
+  /* ── 호 열기 ── */
+  async function openIssue(i) {
+    var issue = ISSUES[i]; if (!issue) return;
+    var token = ++loadToken;
+    select.value = i;
+    destroyBook();
+    pageIndex = 0;
+    pdfLink.hidden = !!issue.demo;
+    if (!issue.demo) pdfLink.href = issue.file;
+    try {
+      var key = issue.demo ? "__demo" : issue.file;
+      var data = cache.get(key);
+      if (!data) {
+        showStatus("신문을 펼치는 중…", 0);
+        data = issue.demo ? renderDemo() : await renderPdf(issue.file, token);
+        if (!data || token !== loadToken) return;
+        cache.set(key, data);
+      }
+      current = data;
+      hideStatus();
+      buildBook();
+      if (!issue.demo && history.replaceState) history.replaceState(null, "", "#" + (ISSUES.length - i));
+    } catch (e) {
+      if (token !== loadToken) return;
+      console.error(e);
+      current = null;
+      showStatus("이 신문을 불러오지 못했습니다. 파일 이름과 위치를 확인해 주세요. (" + issue.file + ")", null);
+      updateControls();
+    }
+  }
+
+  function destroyBook() {
+    if (flip) { try { flip.destroy(); } catch (e) {} flip = null; }
+    stage.innerHTML = "";
+    updateControls();
+  }
+
+  /* ── 화면 크기에 맞춰 신문을 놓는다 ── */
+  function buildBook() {
+    if (!current) return;
+    if (flip) { try { flip.destroy(); } catch (e) {} flip = null; }
+    stage.innerHTML = "";
+
+    var W = stage.clientWidth, H = stage.clientHeight, r = current.ratio;
+    var two = Math.min(W / 2, H * r);   // 두 면을 펼쳤을 때 한 면의 너비
+    var one = Math.min(W, H * r);       // 한 면만 볼 때의 너비
+    landscape = two >= one * 0.62;      // 화면이 넓으면 두 면 펼침, 좁으면 한 면
+    var pw = Math.floor(landscape ? two : one);
+    var ph = Math.floor(pw / r);
+
+    var book = document.createElement("div");
+    book.id = "book";
+    book.style.width = (landscape ? pw * 2 : pw) + "px";
+    book.style.height = ph + "px";
+    var inner = document.createElement("div");
+    current.urls.forEach(function (u, n) {
+      var d = document.createElement("div"); d.className = "page";
+      var img = document.createElement("img");
+      img.src = u; img.alt = (n + 1) + "면"; img.draggable = false;
+      d.appendChild(img); inner.appendChild(d);
+    });
+    book.appendChild(inner);
+    stage.appendChild(book);
+
+    flip = new St.PageFlip(inner, {
+      width: pw, height: ph, size: "stretch",
+      minWidth: landscape ? Math.floor(pw / 2) : pw, maxWidth: 4000,
+      minHeight: 50, maxHeight: 6000,
+      showCover: true, usePortrait: true, autoSize: true,
+      drawShadow: true, maxShadowOpacity: 0.55,
+      flippingTime: 900, startPage: Math.min(pageIndex, current.urls.length - 1),
+      mobileScrollSupport: false, swipeDistance: 20
+    });
+    flip.loadFromHTML(inner.querySelectorAll(".page"));
+    flip.on("flip", function (e) { pageIndex = e.data; updateControls(); });
+    updateControls();
+  }
+
+  function updateControls() {
+    var n = current && flip ? current.urls.length : 0;
+    var book = $("book");
+    if (!n) {
+      prevBtn.disabled = nextBtn.disabled = true;
+      pageInfo.textContent = "–";
+      return;
+    }
+    // 펼침 보기에서는 1면만 혼자, 그 뒤로는 두 면씩 보인다
+    var pair = landscape && pageIndex > 0 && pageIndex + 1 < n;
+    var isLast = landscape ? (pageIndex === 0 ? n <= 1 : pageIndex + 2 > n - 1) : pageIndex >= n - 1;
+    prevBtn.disabled = pageIndex <= 0;
+    nextBtn.disabled = isLast;
+    pageInfo.textContent = (pair ? (pageIndex + 1) + "–" + (pageIndex + 2) : (pageIndex + 1)) + " / " + n + "면";
+    // 첫 면·마지막 면은 한 장만 보이므로 가운데로 옮긴다
+    if (book) {
+      var shift = 0;
+      if (landscape && n > 1) {
+        if (pageIndex === 0) shift = -25;
+        else if (!pair) shift = 25;
+      }
+      book.style.transform = shift ? "translateX(" + shift + "%)" : "";
+    }
+  }
+
+  /* ── 조작 ── */
+  prevBtn.addEventListener("click", function () { if (flip) flip.flipPrev(); });
+  nextBtn.addEventListener("click", function () { if (flip) flip.flipNext(); });
+  document.addEventListener("keydown", function (e) {
+    if (!flip || e.target === select) return;
+    if (e.key === "ArrowRight" || e.key === "PageDown") flip.flipNext();
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") flip.flipPrev();
+  });
+
+  var root = document.documentElement;
+  if (!(root.requestFullscreen || root.webkitRequestFullscreen)) fullBtn.hidden = true;
+  fullBtn.addEventListener("click", function () {
+    var on = document.fullscreenElement || document.webkitFullscreenElement;
+    if (on) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
+  });
+
+  var resizeTimer = null, lastW = 0, lastH = 0;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      if (stage.clientWidth === lastW && stage.clientHeight === lastH) return;
+      lastW = stage.clientWidth; lastH = stage.clientHeight;
+      buildBook();
+    }, 200);
+  });
+
+  /* ── 시작: 주소 끝의 #번호로 특정 호를 바로 열 수 있다 ── */
+  var start = 0, h = parseInt(location.hash.slice(1), 10);
+  if (h >= 1 && h <= ISSUES.length) start = ISSUES.length - h;
+  lastW = stage.clientWidth; lastH = stage.clientHeight;
+  openIssue(start);
+})();
+</script>
+</body>
+</html>

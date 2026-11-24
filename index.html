@@ -56,6 +56,9 @@
   .brand .emblem { display: none; }
   .brand .rule { width: 1px; height: 26px; background: var(--line); flex: none; }
   .brand [hidden] { display: none !important; }
+  /* 신문 제호 로고: 진한 초록이라 종이색 바탕 위에 올린다 */
+  .nameplate { flex: none; background: var(--paper); border-radius: 6px; padding: 5px 10px; line-height: 0; }
+  .brand .nameplate img { height: 44px; }
   .masthead {
     text-align: right;
     font-family: "Nanum Myeongjo", "Noto Serif KR", "Batang", serif;
@@ -118,6 +121,9 @@
     .brand { gap: 9px; }
     .brand .full, .brand .rule { display: none; }
     .brand .emblem { display: block; height: 34px; }
+    .brand .nameplate { padding: 4px 8px; }
+    .brand .nameplate img { height: 36px; }
+    .picker { max-width: 44vw; }
   }
   @media (max-width: 520px) {
     .masthead { font-size: 15px; }
@@ -137,6 +143,7 @@
     <img class="full" id="logoFull" alt="" hidden>
     <img class="emblem" id="logoEmblem" alt="" hidden>
     <span class="rule" id="logoRule" hidden></span>
+    <div class="nameplate" id="nameplate" hidden><img id="nameLogo" alt=""></div>
     <div class="masthead" id="masthead">솔내마당</div>
   </div>
 </header>
@@ -158,7 +165,7 @@
   <a id="pdfLink" target="_blank" rel="noopener" hidden>PDF<span class="label">&nbsp;원본</span></a>
 </div>
 
-<footer><span id="copyright"></span> · v1.1.1</footer>
+<footer><span id="copyright"></span> · v1.2.0</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -178,6 +185,12 @@
       pdfLink = $("pdfLink"), fullBtn = $("fullBtn");
 
   document.title = [SITE.school, SITE.name || "학교신문"].filter(Boolean).join(" ");
+  if (SITE.nameLogo) {
+    var nl = $("nameLogo");
+    nl.alt = SITE.name || "학교신문";
+    nl.onload = function () { $("nameplate").hidden = false; $("masthead").hidden = true; };
+    nl.src = SITE.nameLogo;
+  }
   if (SITE.logo) {
     var lf = $("logoFull"), le = $("logoEmblem");
     lf.src = SITE.logo; le.src = SITE.emblem || SITE.logo;

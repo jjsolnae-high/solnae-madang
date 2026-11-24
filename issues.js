@@ -11,7 +11,8 @@ window.SITE = {
   name: "솔내마당",               // 로고 옆에 보이는 신문 이름
   school: "전주솔내고등학교",     // 아래쪽 저작권 표시에 쓰이는 이름
   logo: "img/logo.png",           // 위쪽 바 로고 (넓은 화면)
-  emblem: "img/emblem.png"        // 위쪽 바 로고 (휴대폰처럼 좁은 화면)
+  emblem: "img/emblem.png",       // 위쪽 바 로고 (휴대폰처럼 좁은 화면)
+  nameLogo: "img/madang.png"      // 신문 제호 로고 (없으면 위 name 글자가 보임)
 };
 
 window.ISSUES = [

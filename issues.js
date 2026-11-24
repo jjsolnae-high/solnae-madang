@@ -17,6 +17,5 @@ window.SITE = {
 
 window.ISSUES = [
   { title: "2026년 창간호", file: "issues/2026.pdf" },
-  { title: "(비교용) 창간호 300dpi", file: "issues/2026-300dpi.pdf" },   // 화질 비교가 끝나면 이 줄과 파일을 지운다
   // { title: "2027년 제2호", file: "issues/2027.pdf" },
 ];

@@ -73,7 +73,7 @@
   }
   #stage { width: 100%; height: 100%; position: relative; overflow: visible; }
   #status { position: fixed; }
-  #book { position: absolute; cursor: zoom-in; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
+  #book { position: absolute; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
   .page { background: var(--paper); overflow: hidden; }
   .page img, .page canvas {
     width: 100%; height: 100%; display: block; object-fit: fill;
@@ -85,6 +85,15 @@
   }
   .page.--left::after  { background: linear-gradient(to left,  rgba(0,0,0,.20), rgba(0,0,0,.05) 4%, transparent 11%); }
   .page.--right::after { background: linear-gradient(to right, rgba(0,0,0,.20), rgba(0,0,0,.05) 4%, transparent 11%); }
+
+  /* 넘어가는 종이의 접힌 자리에 밝은 띠를 얹어 둥글게 말린 것처럼 보이게 한다 */
+  .stf__innerShadow::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+  #book[data-dir="0"] .stf__innerShadow::after {
+    background: linear-gradient(to left, rgba(255,255,255,0) 0%, rgba(255,255,255,.34) 20%, rgba(255,255,255,.08) 42%, rgba(255,255,255,0) 60%);
+  }
+  #book[data-dir="1"] .stf__innerShadow::after {
+    background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,.34) 20%, rgba(255,255,255,.08) 42%, rgba(255,255,255,0) 60%);
+  }
 
   /* 불러오는 중 / 안내 */
   #status {
@@ -194,6 +203,7 @@
   <div class="tools">
     <button id="fitBtn" aria-pressed="false"></button>
     <button id="zoomBtn" aria-label="확대해서 보기">🔍<span class="label">&nbsp;확대</span></button>
+    <button id="soundBtn" aria-pressed="true"></button>
     <button id="fullBtn" aria-label="전체 화면">⛶<span class="label">&nbsp;전체 화면</span></button>
     <a id="pdfLink" target="_blank" rel="noopener" hidden>PDF<span class="label">&nbsp;원본</span></a>
     <span id="pageInfo" aria-live="polite">–</span>
@@ -226,7 +236,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v1.9.1</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v2.0.0</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -361,13 +371,15 @@
         target.width = canvas.width * ss; target.height = canvas.height * ss;
       }
       var ctx = target.getContext("2d", { alpha: false });
-      thickenSmallText(ctx, dpr * ss);
+      thickenPx = dpr * ss; thickenDepth++;
+      var release = function () { if (release) { thickenDepth--; release = null; } };
       task = page.render({
         canvasContext: ctx,
         viewport: vp,
         transform: [1, 0, 0, 1, -(offX || 0) * dpr * ss, -(offY || 0) * dpr * ss],
         background: "#ffffff"
       });
+      task.promise.then(release, release);
       return task.promise.then(function () {
         if (cancelled) return false;
         if (ss > 1) {
@@ -387,29 +399,31 @@
   // 본문이 아주 가는 서체라 화면에서는 옅게 보인다. 작은 글씨일수록 획에 같은 색 테두리를 살짝 둘러
   // 굵기를 보강한다. 글자 모양 자체(벡터)를 굵히는 것이라 가장자리가 거칠어지지 않는다.
   // 화면 글씨 크기 14픽셀 이하에서 최대(0.5픽셀), 30픽셀 이상(제목 등)은 그대로 둔다.
-  function thickenSmallText(ctx, pxPerCss) {
-    var fill = ctx.fillText, lastFont = "", fontPx = 0;
-    ctx.fillText = function (text, x, y) {
-      fill.call(this, text, x, y);
-      if (this.font !== lastFont) {
-        lastFont = this.font;
-        var m = /([\d.]+)px/.exec(lastFont);
-        fontPx = m ? parseFloat(m[1]) : 0;
-      }
-      if (!fontPx) return;
+  // PDF 도구는 면에 따라 글자를 내부의 임시 캔버스에 먼저 그리기도 하므로(투명 효과가 있는 면),
+  // 특정 캔버스가 아니라 '그리는 동안의 모든 캔버스'에 적용해야 면마다 굵기가 같아진다.
+  var thickenDepth = 0, thickenPx = 1;
+  (function () {
+    var proto = window.CanvasRenderingContext2D && CanvasRenderingContext2D.prototype;
+    if (!proto) return;
+    var fill = proto.fillText;
+    proto.fillText = function (text, x, y) {
+      fill.apply(this, arguments);
+      if (!thickenDepth) return;
+      var font = this.font, m = /([\d.]+)px\s+"?g_d/.exec(font);   // PDF에 들어 있는 글꼴만
+      if (!m) return;
       var t = this.getTransform();
       var scale = Math.sqrt(t.a * t.a + t.b * t.b);
-      var size = fontPx * scale / pxPerCss;                 // 화면에서의 글씨 크기
+      var size = parseFloat(m[1]) * scale / thickenPx;            // 화면에서의 글씨 크기
       var extra = Math.min(0.5, 0.04 * size) * Math.max(0, Math.min(1, (30 - size) / 16));
       if (extra < 0.02 || !scale) return;
       var lw = this.lineWidth, st = this.strokeStyle, lj = this.lineJoin;
-      this.lineWidth = extra * pxPerCss / scale;
+      this.lineWidth = extra * thickenPx / scale;
       this.strokeStyle = this.fillStyle;
       this.lineJoin = "round";
       this.strokeText(text, x, y);
       this.lineWidth = lw; this.strokeStyle = st; this.lineJoin = lj;
     };
-  }
+  })();
 
   /* ── 견본 신문 (올린 PDF가 없을 때) ── */
   function renderDemo() {
@@ -517,7 +531,7 @@
     nextBtn.style.right = scrolls ? (8 + SCROLLBAR) + "px" : "";   // 스크롤바를 가리지 않게
     fitBtn.textContent = bigMode ? "한눈에 보기" : "크게 보기";
     fitBtn.setAttribute("aria-pressed", String(bigMode));
-    $("hint").textContent = (scrolls ? "아래로 스크롤해서 읽기 · " : "") + "면을 누르면 확대 · 양옆 화살표나 모서리 끌기로 넘기기";
+    $("hint").textContent = (scrolls ? "아래로 스크롤해서 읽기 · " : "") + "면을 누르면 확대 · 옆으로 끌거나 모서리·양옆 화살표로 넘기기";
     var dpr = DPR();
 
     var book = document.createElement("div");
@@ -554,10 +568,9 @@
       minWidth: landscape ? Math.floor(pw / 2) : pw, maxWidth: 4000,
       minHeight: 50, maxHeight: 6000,
       showCover: true, usePortrait: true, autoSize: true,
-      drawShadow: true, maxShadowOpacity: 0.55,
+      drawShadow: true, maxShadowOpacity: 0.7,
       flippingTime: 900, startPage: pageIndex,
-      mobileScrollSupport: scrolls, swipeDistance: 20,
-      disableFlipByClick: true        // 면을 누르면 넘기지 않고 확대한다 (모서리는 그대로 넘김)
+      useMouseEvents: false           // 누르기·끌기·넘김 움직임은 아래에서 직접 다룬다
     });
     flip.loadFromHTML(inner.querySelectorAll(".page"));
     flip.on("flip", function (e) {
@@ -612,8 +625,8 @@
   }
 
   /* ── 조작 ── */
-  prevBtn.addEventListener("click", function () { if (flip) flip.flipPrev(); });
-  nextBtn.addEventListener("click", function () { if (flip) flip.flipNext(); });
+  prevBtn.addEventListener("click", function () { turn(-1); });
+  nextBtn.addEventListener("click", function () { turn(1); });
   document.addEventListener("keydown", function (e) {
     if (zoomOpen()) {
       if (e.key === "Escape") closeZoom();
@@ -622,8 +635,8 @@
       return;
     }
     if (!flip || e.target === select) return;
-    if (e.key === "ArrowRight" || e.key === "PageDown") flip.flipNext();
-    else if (e.key === "ArrowLeft" || e.key === "PageUp") flip.flipPrev();
+    if (e.key === "ArrowRight" || e.key === "PageDown") turn(1);
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") turn(-1);
   });
 
   /* ── 확대 보기 ──
@@ -737,39 +750,217 @@
     zoomBtn.focus();
   }
   zoomBtn.addEventListener("click", function () { openZoom(); });
-  // 넘겨보기 화면에서 면을 누르면 그 자리를 확대한다 (모서리는 넘김용이라 제외)
-  var lastTapZoom = 0;
-  stage.addEventListener("click", function (e) {
-    if (Date.now() - lastTapZoom < 700) return;     // 손가락 터치로 이미 처리한 경우
-    zoomAt(e.clientX, e.clientY);
+  /* ── 넘기기 ──
+     누르기·끌기·넘어가는 움직임을 직접 다룬다.
+     · 제자리에서 눌렀다 떼면: 가운데는 확대, 모서리는 넘김
+     · 옆으로 끌면: 종이가 손을 따라 접히고, 놓으면 마저 넘어가거나 되돌아간다
+     · 넘어갈 때는 처음과 끝이 느리고 가운데가 빠르게, 모서리가 살짝 들렸다 내려앉는 길로 움직인다 */
+  function fcOf() { return flip ? flip.getFlipController() : null; }
+  function libPos(cx, cy) {
+    var el = stage.querySelector(".stf__block") || $("book");
+    var r = el.getBoundingClientRect();
+    return { x: cx - r.left, y: cy - r.top };
+  }
+  function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+  var calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function markDir() {
+    var fc = fcOf(), book = $("book");
+    if (book && fc && fc.calc) book.dataset.dir = String(fc.calc.getDirection());
+  }
+  function endFlip(f, turned) {
+    if (f !== flip) return;                       // 그 사이 다른 호로 바뀌었으면 손대지 않는다
+    var fc = f.getFlipController(), render = f.getRender();
+    if (turned && fc.calc) { if (fc.calc.getDirection() === 1) f.turnToPrevPage(); else f.turnToNextPage(); }
+    render.setBottomPage(null); render.setFlippingPage(null); render.clearShadow();
+    fc.setState("read"); fc.reset();
+    var book = $("book"); if (book) delete book.dataset.dir;
+  }
+  // 한 장 넘기기. dir: 1 다음, -1 이전
+  function turn(dir, fromTop) {
+    if (!flip || zoomOpen()) return false;
+    var f = flip, fc = fcOf(), render = f.getRender(), st = fc.getState();
+    if (st !== "read" && st !== "fold_corner") return false;
+    if (fc.calc) render.finishAnimation();        // 모서리가 살짝 들려 있던 것 정리
+    var rect = render.getRect(), pw = rect.pageWidth, H = rect.height;
+    var start = { x: dir > 0 ? rect.left + 2 * pw - 10 : 10, y: fromTop ? 1 : H - 2 };
+    if (!fc.start(start)) { fc.setState("read"); return false; }
+    fc.setState("flipping"); markDir();
+    var lift = Math.min(H * 0.2, pw * 0.32), N = 84, frames = [];
+    for (var i = 0; i <= N; i++) (function (e) {
+      var x = Math.min(pw - 2, pw - 2 * pw * e);
+      var arc = lift * Math.sin(Math.PI * e);
+      var y = fromTop ? 1 + arc : H - 1 - arc;
+      if (e >= 1) { x = -pw; y = fromTop ? 0 : H; }
+      frames.push(function () { fc.do({ x: x, y: y }); });
+    })(easeInOut(i / N));
+    playFlipSound();
+    render.startAnimation(frames, calm ? 260 : 1050, function () { endFlip(f, true); });
+    return true;
+  }
+
+  var ptr = null, lastTouch = 0;
+  function pointerDown(cx, cy, isTouch) {
+    ptr = null;
+    if (!flip || zoomOpen() || fcOf().getState() === "flipping") return;
+    ptr = { x: cx, y: cy, moved: false, folding: false, touch: isTouch };
+  }
+  function pointerMove(cx, cy, ev) {
+    if (!ptr || !flip) return;
+    var fc = fcOf(), render = flip.getRender();
+    var dx = cx - ptr.x, dy = cy - ptr.y;
+    if (!ptr.moved) {
+      if (Math.hypot(dx, dy) < 7) return;
+      ptr.moved = true;
+      // 터치로 위아래로 움직이면 스크롤이므로 넘김을 시작하지 않는다
+      if (!(ptr.touch && Math.abs(dy) > Math.abs(dx))) {
+        if (fc.calc) render.finishAnimation();
+        if (fc.start(libPos(ptr.x, ptr.y))) { ptr.folding = true; fc.setState("user_fold"); markDir(); }
+        else fc.setState("read");
+      }
+    }
+    if (!ptr.folding) return;
+    if (ev && ev.cancelable) ev.preventDefault();
+    fc.do(render.convertToPage(libPos(cx, cy)));
+  }
+  function pointerUp(cx, cy) {
+    if (!ptr) return;
+    var p = ptr; ptr = null;
+    if (!flip) return;
+    var f = flip, fc = fcOf(), render = f.getRender();
+    if (p.folding && fc.calc) {
+      var rect = render.getRect(), pw = rect.pageWidth, H = rect.height;
+      var from = fc.calc.getPosition(), cornerY = fc.calc.getCorner() === "bottom" ? H : 0;
+      var dx = cx - p.x, forward = fc.calc.getDirection() === 0;
+      // 넘기려는 방향으로 40픽셀 넘게 끌었거나 절반을 넘겼으면 마저 넘기고, 아니면 되돌린다
+      var complete = from.x <= 0 || (forward ? dx < -40 : dx > 40);
+      var to = { x: complete ? -pw : pw, y: cornerY };
+      var N = 44, frames = [];
+      for (var i = 1; i <= N; i++) (function (e) {
+        var x = from.x + (to.x - from.x) * e, y = from.y + (to.y - from.y) * e;
+        frames.push(function () { fc.do({ x: x, y: y }); });
+      })(easeOut(i / N));
+      fc.setState("flipping");
+      if (complete) playFlipSound();
+      var dist = Math.abs(to.x - from.x) / (2 * pw);
+      render.startAnimation(frames, calm ? 200 : 300 + 550 * dist, function () { endFlip(f, complete); });
+      return;
+    }
+    if (fc.getState() === "user_fold") fc.setState("read");
+    if (p.moved) return;                          // 끌었지만 넘김이 아니었던 경우(스크롤 등)
+    var sp = spot(cx, cy);
+    if (!sp) return;
+    if (sp.onCorner) turn(sp.x < sp.width / 2 ? -1 : 1, sp.y < sp.height / 2);
+    else openZoom({ fx: sp.x / sp.width, fyW: sp.y / sp.width });
+  }
+  function cancelPointer() {                      // 두 손가락이 닿는 등, 넘김을 그만둘 때
+    if (ptr && ptr.folding) { var p = ptr; pointerUp(p.x, p.y); }
+    ptr = null;
+  }
+
+  // 마우스
+  stage.addEventListener("mousedown", function (e) {
+    if (e.button !== 0 || Date.now() - lastTouch < 800) return;
+    if (!spot(e.clientX, e.clientY)) return;
+    pointerDown(e.clientX, e.clientY, false); e.preventDefault();
   });
-  // 터치 화면: 넘김 효과가 터치를 가로채서 click이 오지 않으므로 '톡 누르기'를 직접 알아챈다
-  var tap = null;
+  window.addEventListener("mousemove", function (e) { if (ptr && !ptr.touch) pointerMove(e.clientX, e.clientY, e); });
+  window.addEventListener("mouseup", function (e) { if (ptr && !ptr.touch) pointerUp(e.clientX, e.clientY); });
+  // 마우스를 올리면: 가운데는 돋보기, 모서리는 종이가 살짝 들리며 손 모양
+  stage.addEventListener("mousemove", function (e) {
+    var book = $("book"); if (!book || !flip || ptr || Date.now() - lastTouch < 800) return;
+    var sp = spot(e.clientX, e.clientY);
+    book.style.cursor = !sp ? "" : (sp.onCorner ? "pointer" : "zoom-in");
+    var fc = fcOf(), st = fc.getState();
+    if (st === "read" || st === "fold_corner") { fc.showCorner(libPos(e.clientX, e.clientY)); markDir(); }
+  });
+  stage.addEventListener("mouseleave", function () {
+    var fc = fcOf(); if (!fc || ptr) return;
+    if (fc.getState() === "fold_corner") fc.showCorner({ x: -9999, y: -9999 });
+  });
+  // 터치
   stage.addEventListener("touchstart", function (e) {
-    var t = e.touches;
-    tap = t.length === 1 ? { x: t[0].clientX, y: t[0].clientY, at: Date.now() } : null;
+    lastTouch = Date.now();
+    if (e.touches.length === 1) pointerDown(e.touches[0].clientX, e.touches[0].clientY, true);
+    else cancelPointer();
   }, { passive: true });
+  stage.addEventListener("touchmove", function (e) {
+    lastTouch = Date.now();
+    if (ptr && e.touches.length === 1) pointerMove(e.touches[0].clientX, e.touches[0].clientY, e);
+  }, { passive: false });
   stage.addEventListener("touchend", function (e) {
-    if (!tap || e.touches.length) { tap = null; return; }
-    var t = e.changedTouches[0], was = tap; tap = null;
-    if (Date.now() - was.at > 350 || Math.hypot(t.clientX - was.x, t.clientY - was.y) > 10) return;
-    lastTapZoom = Date.now();
-    setTimeout(function () { zoomAt(was.x, was.y); }, 0);
+    lastTouch = Date.now();
+    var t = e.changedTouches[0];
+    if (ptr && !e.touches.length && t) pointerUp(t.clientX, t.clientY);
   }, { passive: true });
-  function zoomAt(clientX, clientY) {
-    var e = { clientX: clientX, clientY: clientY };
+  stage.addEventListener("touchcancel", function () { cancelPointer(); }, { passive: true });
+
+  /* ── 종이 넘기는 소리: 녹음 파일 없이 잡음을 다듬어 만든다 ── */
+  var audioCtx = null, soundOn = true, soundBtn = $("soundBtn");
+  try { soundOn = localStorage.getItem("madang-sound") !== "off"; } catch (e) {}
+  function showSound() {
+    soundBtn.textContent = soundOn ? "🔊" : "🔇";
+    soundBtn.setAttribute("aria-pressed", String(soundOn));
+    soundBtn.setAttribute("aria-label", soundOn ? "넘기는 소리 끄기" : "넘기는 소리 켜기");
+    soundBtn.title = soundOn ? "넘기는 소리 켜짐" : "넘기는 소리 꺼짐";
+  }
+  showSound();
+  soundBtn.addEventListener("click", function () {
+    soundOn = !soundOn;
+    try { localStorage.setItem("madang-sound", soundOn ? "on" : "off"); } catch (e) {}
+    showSound();
+    if (soundOn) playFlipSound();
+  });
+  function noise(seconds, shape) {
+    var n = Math.floor(audioCtx.sampleRate * seconds), buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * shape(i / n);
+    return buf;
+  }
+  function playFlipSound() {
+    if (!soundOn) return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audioCtx = audioCtx || new AC();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var now = audioCtx.currentTime;
+      // ① 스윽: 종이가 공기를 가르며 넘어가는 소리 (점점 커졌다 잦아들고, 음색이 높아졌다 내려온다)
+      var swish = audioCtx.createBufferSource();
+      swish.buffer = noise(0.62, function (t) {
+        var env = Math.pow(Math.sin(Math.PI * Math.pow(t, 0.8)), 1.6);
+        var flutter = 0.75 + 0.25 * Math.sin(t * 46) * Math.sin(t * 17);     // 종이의 떨림
+        return env * flutter;
+      });
+      var band = audioCtx.createBiquadFilter(); band.type = "bandpass"; band.Q.value = 0.8;
+      band.frequency.setValueAtTime(1400, now);
+      band.frequency.linearRampToValueAtTime(4200, now + 0.3);
+      band.frequency.linearRampToValueAtTime(2200, now + 0.62);
+      var g1 = audioCtx.createGain(); g1.gain.value = 0.22;
+      swish.connect(band); band.connect(g1); g1.connect(audioCtx.destination);
+      swish.start(now + 0.08);
+      // ② 탁: 종이가 내려앉는 소리
+      var pat = audioCtx.createBufferSource();
+      pat.buffer = noise(0.09, function (t) { return Math.pow(1 - t, 3); });
+      var low = audioCtx.createBiquadFilter(); low.type = "lowpass"; low.frequency.value = 1100;
+      var g2 = audioCtx.createGain(); g2.gain.value = 0.3;
+      pat.connect(low); low.connect(g2); g2.connect(audioCtx.destination);
+      pat.start(now + (calm ? 0.2 : 0.78));
+    } catch (e) {}
+  }
+
+  // 지금 보이는 면들이 차지하는 영역과, 그 안에서 누른 위치
+  function spot(clientX, clientY) {
     var book = $("book");
-    if (!book || !flip || !current || zoomOpen()) return;
+    if (!book || !flip || !current) return null;
     var pages = viewPages(), pw = +book.dataset.pw, r = book.getBoundingClientRect();
-    // 지금 보이는 면들이 차지하는 영역
     var left = r.left + (landscape && pageIndex === 0 ? pw : 0);
-    var width = pw * pages.length, top = r.top, height = r.height;
-    var x = e.clientX - left, y = e.clientY - top;
-    if (x < 0 || y < 0 || x > width || y > height) return;
+    var width = pw * pages.length, height = r.height;
+    var x = clientX - left, y = clientY - r.top;
+    if (x < 0 || y < 0 || x > width || y > height) return null;
     var corner = Math.sqrt(pw * pw + height * height) / 5;
-    var nearX = Math.min(x, width - x), nearY = Math.min(y, height - y);
-    if (Math.hypot(nearX, nearY) < corner) return;
-    openZoom({ fx: x / width, fyW: y / width });
+    var near = Math.hypot(Math.min(x, width - x), Math.min(y, height - y));
+    return { x: x, y: y, width: width, height: height, onCorner: near < corner };
   }
   $("zoomClose").addEventListener("click", closeZoom);
   $("zoomIn").addEventListener("click", function () { setZoom(zLevel * 1.4); });

@@ -160,10 +160,13 @@
   }
   #hint:not(:empty)::after { content: "  ·  "; white-space: pre; }
 
-  @media (max-width: 760px) {
+  /* 창이 넓지 않으면 학교 로고를 원형 문장만 남겨 위쪽 바가 한 줄에 들어가게 한다 */
+  @media (max-width: 1180px) {
     .brand { gap: 9px; }
     .brand .full, .brand .rule { display: none; }
     .brand .emblem { display: block; height: 34px; }
+  }
+  @media (max-width: 760px) {
     .brand .nameplate img { height: 32px; }
     .picker { max-width: 44vw; }
     /* 좁은 화면: 보기 버튼은 둘째 줄로 */
@@ -223,7 +226,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v1.9.0</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v1.9.1</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>

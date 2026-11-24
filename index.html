@@ -67,12 +67,10 @@
   }
 
   /* 신문이 놓이는 자리 */
-  main { flex: 1; min-height: 0; position: relative; padding: 14px 10px; }
-  #stage {
-    width: 100%; height: 100%;
-    display: flex; align-items: center; justify-content: center;
-  }
-  #book { flex: none; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
+  main { flex: 1; min-height: 0; position: relative; padding: 10px 10px 6px; }
+  .hint { flex: none; text-align: center; font-size: 12px; color: var(--muted); padding: 0 12px; }
+  #stage { width: 100%; height: 100%; position: relative; overflow: visible; }
+  #book { position: absolute; cursor: zoom-in; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
   .page { background: var(--paper); overflow: hidden; }
   .page img, .page canvas {
     width: 100%; height: 100%; display: block; object-fit: fill;
@@ -120,6 +118,8 @@
   }
   #zoom[hidden] { display: none; }
   #zoom.dragging { cursor: grabbing; }
+  #zoom.mouse { cursor: zoom-out; }
+  #zoom.mouse.dragging { cursor: grabbing; }
   #zoomInner { display: flex; margin: 0 auto; min-height: 100%; align-items: flex-start; }
   .zpage { flex: 1 1 0; min-width: 0; position: relative; background: #fff; overflow: hidden; }
   .zpage img, .zpage canvas.base {
@@ -158,7 +158,7 @@
     main { padding: 10px 6px; }
     .controls .label { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { #book { flex: none; transition: none; } }
+  @media (prefers-reduced-motion: reduce) { #book { transition: none; } }
 </style>
 </head>
 <body>
@@ -184,6 +184,7 @@
   </div>
 </main>
 
+<div class="hint">면을 누르면 크게 볼 수 있습니다 · 넘길 때는 모서리를 끌거나 ◀ ▶</div>
 <div class="controls">
   <button id="prevBtn" aria-label="이전 면">◀</button>
   <div id="pageInfo" aria-live="polite">–</div>
@@ -201,7 +202,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="copyright"></span> · v1.4.0</footer>
+<footer><span id="copyright"></span> · v1.5.0</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -410,8 +411,13 @@
 
     var book = document.createElement("div");
     book.id = "book";
-    book.style.width = (landscape ? pw * 2 : pw) + "px";
+    var bw = landscape ? pw * 2 : pw;
+    book.style.width = bw + "px";
     book.style.height = ph + "px";
+    // 반 픽셀이라도 어긋나면 글자가 번지므로 위치를 정수 픽셀에 맞춘다
+    book.style.left = Math.floor((W - bw) / 2) + "px";
+    book.style.top = Math.floor((H - ph) / 2) + "px";
+    book.dataset.pw = pw;
     var inner = document.createElement("div");
     var canvases = [];
     for (var n = 0; n < data.count; n++) {
@@ -439,7 +445,8 @@
       showCover: true, usePortrait: true, autoSize: true,
       drawShadow: true, maxShadowOpacity: 0.55,
       flippingTime: 900, startPage: pageIndex,
-      mobileScrollSupport: false, swipeDistance: 20
+      mobileScrollSupport: false, swipeDistance: 20,
+      disableFlipByClick: true        // 면을 누르면 넘기지 않고 확대한다 (모서리는 그대로 넘김)
     });
     flip.loadFromHTML(inner.querySelectorAll(".page"));
     flip.on("flip", function (e) { pageIndex = e.data; updateControls(); });
@@ -479,10 +486,11 @@
     if (book) {
       var shift = 0;
       if (landscape && n > 1) {
-        if (pageIndex === 0) shift = -25;
-        else if (!pair) shift = 25;
+        var half = Math.round((+book.dataset.pw || 0) / 2);
+        if (pageIndex === 0) shift = -half;
+        else if (!pair) shift = half;
       }
-      book.style.transform = shift ? "translateX(" + shift + "%)" : "";
+      book.style.transform = shift ? "translateX(" + shift + "px)" : "";
     }
   }
 
@@ -521,6 +529,7 @@
     var oldW = zoomInner.offsetWidth || vw;
     var fx = (zoomBox.scrollLeft + cx) / oldW, fy = (zoomBox.scrollTop + cy) / oldW;
     var newW = Math.round(vw * z);
+    newW -= newW % (zPages.length || 1);      // 면 너비가 정수 픽셀이 되도록
     zoomInner.style.width = newW + "px";
     zLevel = z;
     zoomBox.scrollLeft = fx * newW - cx;
@@ -543,8 +552,9 @@
     while (pad > 0 && (vw + 2 * pad) * (vh + 2 * pad) * dpr * dpr > 14e6) pad = Math.floor(pad / 2);
     zPages.forEach(function (zp) {
       var r = zp.el.getBoundingClientRect();
-      var x0 = Math.max(r.left, box.left - pad), y0 = Math.max(r.top, box.top - pad);
-      var x1 = Math.min(r.right, box.left + vw + pad), y1 = Math.min(r.bottom, box.top + vh + pad);
+      var snap = function (v) { return Math.round(v * dpr) / dpr; };   // 화면 점 격자에 맞춘다
+      var x0 = snap(Math.max(r.left, box.left - pad)), y0 = snap(Math.max(r.top, box.top - pad));
+      var x1 = snap(Math.min(r.right, box.left + vw + pad)), y1 = snap(Math.min(r.bottom, box.top + vh + pad));
       if (x1 - x0 < 2 || y1 - y0 < 2) return;
       var cv = document.createElement("canvas");
       cv.width = Math.round((x1 - x0) * dpr); cv.height = Math.round((y1 - y0) * dpr);
@@ -564,7 +574,8 @@
       });
     });
   }
-  function openZoom() {
+  // at: 넘겨보기 화면에서 누른 지점 {fx: 가로 비율, fyW: 세로 위치 ÷ 전체 너비}. 없으면 맨 위 가운데.
+  function openZoom(at) {
     if (!current || !flip || zoomOpen()) return;
     var data = current, pages = viewPages();
     zoomInner.innerHTML = "";
@@ -588,10 +599,17 @@
     zoomBox.hidden = false; zoomBar.hidden = false;
     zoomInner.style.width = zoomBox.clientWidth + "px";
     zoomBox.scrollLeft = zoomBox.scrollTop = 0;
-    // 처음 배율: 한 면이 화면 너비의 1.6배(휴대폰은 2배)쯤 되도록
-    var start = (zoomBox.clientWidth < 700 ? 2 : 1.6) * zPages.length;
-    setZoom(Math.max(1, start), 0, 0);
-    $("zoomClose").focus();
+    // 처음 배율: 한 면의 너비가 1100픽셀쯤(본문 글씨가 편하게 읽히는 크기) 되도록
+    var vw = zoomBox.clientWidth, vh = zoomBox.clientHeight;
+    var z0 = 1100 * zPages.length / vw;
+    if (vw < 700) z0 = Math.max(z0, 1.15);
+    Z_MIN = Math.min(1, z0);            // 넓은 화면에서는 화면 너비보다 작게도 볼 수 있다
+    setZoom(z0, 0, 0);
+    var w = zoomInner.offsetWidth;
+    zoomBox.scrollLeft = (at ? at.fx : 0.5) * w - vw / 2;
+    zoomBox.scrollTop = at ? at.fyW * w - vh / 2 : 0;
+    scheduleSharp();
+    $("zoomClose").focus({ preventScroll: true });
   }
   function closeZoom() {
     clearTimeout(sharpTimer);
@@ -599,13 +617,49 @@
     zoomBox.hidden = true; zoomBar.hidden = true; zoomInner.innerHTML = ""; zPages = [];
     zoomBtn.focus();
   }
-  zoomBtn.addEventListener("click", openZoom);
+  zoomBtn.addEventListener("click", function () { openZoom(); });
+  // 넘겨보기 화면에서 면을 누르면 그 자리를 확대한다 (모서리는 넘김용이라 제외)
+  var lastTapZoom = 0;
+  stage.addEventListener("click", function (e) {
+    if (Date.now() - lastTapZoom < 700) return;     // 손가락 터치로 이미 처리한 경우
+    zoomAt(e.clientX, e.clientY);
+  });
+  // 터치 화면: 넘김 효과가 터치를 가로채서 click이 오지 않으므로 '톡 누르기'를 직접 알아챈다
+  var tap = null;
+  stage.addEventListener("touchstart", function (e) {
+    var t = e.touches;
+    tap = t.length === 1 ? { x: t[0].clientX, y: t[0].clientY, at: Date.now() } : null;
+  }, { passive: true });
+  stage.addEventListener("touchend", function (e) {
+    if (!tap || e.touches.length) { tap = null; return; }
+    var t = e.changedTouches[0], was = tap; tap = null;
+    if (Date.now() - was.at > 350 || Math.hypot(t.clientX - was.x, t.clientY - was.y) > 10) return;
+    lastTapZoom = Date.now();
+    setTimeout(function () { zoomAt(was.x, was.y); }, 0);
+  }, { passive: true });
+  function zoomAt(clientX, clientY) {
+    var e = { clientX: clientX, clientY: clientY };
+    var book = $("book");
+    if (!book || !flip || !current || zoomOpen()) return;
+    var pages = viewPages(), pw = +book.dataset.pw, r = book.getBoundingClientRect();
+    // 지금 보이는 면들이 차지하는 영역
+    var left = r.left + (landscape && pageIndex === 0 ? pw : 0);
+    var width = pw * pages.length, top = r.top, height = r.height;
+    var x = e.clientX - left, y = e.clientY - top;
+    if (x < 0 || y < 0 || x > width || y > height) return;
+    var corner = Math.sqrt(pw * pw + height * height) / 5;
+    var nearX = Math.min(x, width - x), nearY = Math.min(y, height - y);
+    if (Math.hypot(nearX, nearY) < corner) return;
+    openZoom({ fx: x / width, fyW: y / width });
+  }
   $("zoomClose").addEventListener("click", closeZoom);
   $("zoomIn").addEventListener("click", function () { setZoom(zLevel * 1.4); });
   $("zoomOut").addEventListener("click", function () { setZoom(zLevel / 1.4); });
   zoomBox.addEventListener("scroll", scheduleSharp, { passive: true });
-  zoomBox.addEventListener("dblclick", function (e) {
-    setZoom(zLevel > zPages.length * 1.2 ? 1 : zLevel * 2, e.clientX, e.clientY);
+  // 마우스: 끌지 않고 그냥 누르면 넘겨보기 화면으로 돌아간다
+  zoomBox.addEventListener("pointerdown", function (e) { zoomBox.classList.toggle("mouse", e.pointerType === "mouse"); });
+  zoomBox.addEventListener("click", function (e) {
+    if (zoomBox.classList.contains("mouse") && !dragMoved) closeZoom();
   });
   zoomBox.addEventListener("wheel", function (e) {
     if (!e.ctrlKey && !e.metaKey) return;      // 그냥 휠은 위아래 이동, Ctrl+휠은 확대
@@ -613,14 +667,16 @@
     setZoom(zLevel * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
   }, { passive: false });
   // 마우스로 끌어서 이동
-  var drag = null;
+  var drag = null, dragMoved = false;
   zoomBox.addEventListener("mousedown", function (e) {
     if (e.button !== 0) return;
+    dragMoved = false;
     drag = { x: e.clientX, y: e.clientY, l: zoomBox.scrollLeft, t: zoomBox.scrollTop };
     zoomBox.classList.add("dragging"); e.preventDefault();
   });
   window.addEventListener("mousemove", function (e) {
     if (!drag) return;
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 4) dragMoved = true;
     zoomBox.scrollLeft = drag.l - (e.clientX - drag.x);
     zoomBox.scrollTop = drag.t - (e.clientY - drag.y);
   });

@@ -16,6 +16,6 @@ window.SITE = {
 };
 
 window.ISSUES = [
+  { title: "2026년 창간호", file: "issues/2026.pdf" },
   // { title: "2027년 제2호", file: "issues/2027.pdf" },
-  // { title: "2026년 창간호", file: "issues/2026.pdf" },
 ];

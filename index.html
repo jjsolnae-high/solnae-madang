@@ -227,7 +227,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v2.1.0</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v2.1.1</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -512,7 +512,8 @@
     var canBig = W >= 700 && pw < READABLE;
     fitBtn.hidden = !canBig;
     if (canBig && bigMode) {
-      if (W / 2 >= 1000) { landscape = true; pw = Math.min(Math.floor(W / 2), BIG_MAX); }
+      // 창 너비가 1300픽셀쯤 넘으면 신문처럼 두 면을 펼쳐 보여 주고, 그보다 좁으면 한 면씩 크게
+      if (W / 2 >= 640) { landscape = true; pw = Math.min(Math.floor(W / 2), BIG_MAX); }
       else { landscape = false; pw = Math.min(W, BIG_MAX); }
     }
     var ph = Math.floor(pw / r);

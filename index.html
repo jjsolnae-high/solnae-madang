@@ -181,6 +181,7 @@
     #hint { display: none; }
     .tools { gap: 4px; }
     .tools button, .tools a { padding: 0 9px; font-size: 13px; }
+    .tools .label { display: none; }
   }
 </style>
 </head>
@@ -195,6 +196,7 @@
     <button id="zoomBtn" aria-label="확대해서 보기">🔍<span class="label">&nbsp;확대</span></button>
     <button id="fullBtn" aria-label="전체 화면">⛶<span class="label">&nbsp;전체 화면</span></button>
     <a id="pdfLink" target="_blank" rel="noopener" hidden>PDF<span class="label">&nbsp;원본</span></a>
+    <button id="firstBtn" aria-label="1면으로 가기">⏮<span class="label">&nbsp;처음</span></button>
     <span id="pageInfo" aria-live="polite">–</span>
   </div>
   <div class="brand">
@@ -225,7 +227,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v2.0.10</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v2.1.0</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -626,7 +628,7 @@
     var n = current && flip ? current.count : 0;
     var book = $("book");
     if (!n) {
-      prevBtn.disabled = nextBtn.disabled = zoomBtn.disabled = true;
+      prevBtn.disabled = nextBtn.disabled = zoomBtn.disabled = $("firstBtn").disabled = true;
       pageInfo.textContent = "–";
       return;
     }
@@ -635,6 +637,7 @@
     var isLast = landscape ? (pageIndex === 0 ? n <= 1 : pageIndex + 2 > n - 1) : pageIndex >= n - 1;
     zoomBtn.disabled = false;
     prevBtn.disabled = pageIndex <= 0;
+    $("firstBtn").disabled = pageIndex <= 0;
     nextBtn.disabled = isLast;
     pageInfo.textContent = (pair ? (pageIndex + 1) + "–" + (pageIndex + 2) : (pageIndex + 1)) + " / " + n + "면";
     // 첫 면·마지막 면은 한 장만 보이므로 가운데로 옮긴다
@@ -650,6 +653,14 @@
   }
 
   /* ── 조작 ── */
+  // 1면으로 바로 가기 (넘기는 효과 없이 곧장 이동)
+  $("firstBtn").addEventListener("click", function () {
+    if (!flip || !current || pageIndex === 0) return;
+    var st = fcOf().getState();
+    if (st !== "read" && st !== "fold_corner") return;      // 넘어가는 중에는 기다린다
+    flip.turnToPage(0);
+    mainEl.scrollTop = 0;
+  });
   prevBtn.addEventListener("click", function () { turn(-1); });
   nextBtn.addEventListener("click", function () { turn(1); });
   document.addEventListener("keydown", function (e) {

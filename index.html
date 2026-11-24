@@ -86,15 +86,6 @@
   .page.--left::after  { background: linear-gradient(to left,  rgba(0,0,0,.20), rgba(0,0,0,.05) 4%, transparent 11%); }
   .page.--right::after { background: linear-gradient(to right, rgba(0,0,0,.20), rgba(0,0,0,.05) 4%, transparent 11%); }
 
-  /* 넘어가는 종이의 접힌 자리에 밝은 띠를 얹어 둥글게 말린 것처럼 보이게 한다 */
-  .stf__innerShadow::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
-  #book[data-dir="0"] .stf__innerShadow::after {
-    background: linear-gradient(to left, rgba(255,255,255,0) 0%, rgba(255,255,255,.34) 20%, rgba(255,255,255,.08) 42%, rgba(255,255,255,0) 60%);
-  }
-  #book[data-dir="1"] .stf__innerShadow::after {
-    background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,.34) 20%, rgba(255,255,255,.08) 42%, rgba(255,255,255,0) 60%);
-  }
-
   /* 불러오는 중 / 안내 */
   #status {
     position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -236,7 +227,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v2.0.0</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v2.0.2</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -568,7 +559,7 @@
       minWidth: landscape ? Math.floor(pw / 2) : pw, maxWidth: 4000,
       minHeight: 50, maxHeight: 6000,
       showCover: true, usePortrait: true, autoSize: true,
-      drawShadow: true, maxShadowOpacity: 0.7,
+      drawShadow: true, maxShadowOpacity: 0.55,
       flippingTime: 900, startPage: pageIndex,
       useMouseEvents: false           // 누르기·끌기·넘김 움직임은 아래에서 직접 다룬다
     });
@@ -751,51 +742,24 @@
   }
   zoomBtn.addEventListener("click", function () { openZoom(); });
   /* ── 넘기기 ──
-     누르기·끌기·넘어가는 움직임을 직접 다룬다.
+     누르기와 끌기를 직접 구분한다.
      · 제자리에서 눌렀다 떼면: 가운데는 확대, 모서리는 넘김
-     · 옆으로 끌면: 종이가 손을 따라 접히고, 놓으면 마저 넘어가거나 되돌아간다
-     · 넘어갈 때는 처음과 끝이 느리고 가운데가 빠르게, 모서리가 살짝 들렸다 내려앉는 길로 움직인다 */
+     · 옆으로 끌면: 종이가 손을 따라 접히고, 놓으면 마저 넘어가거나 되돌아간다 */
   function fcOf() { return flip ? flip.getFlipController() : null; }
   function libPos(cx, cy) {
     var el = stage.querySelector(".stf__block") || $("book");
     var r = el.getBoundingClientRect();
     return { x: cx - r.left, y: cy - r.top };
   }
-  function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
-  function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
-  var calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  function markDir() {
-    var fc = fcOf(), book = $("book");
-    if (book && fc && fc.calc) book.dataset.dir = String(fc.calc.getDirection());
-  }
-  function endFlip(f, turned) {
-    if (f !== flip) return;                       // 그 사이 다른 호로 바뀌었으면 손대지 않는다
-    var fc = f.getFlipController(), render = f.getRender();
-    if (turned && fc.calc) { if (fc.calc.getDirection() === 1) f.turnToPrevPage(); else f.turnToNextPage(); }
-    render.setBottomPage(null); render.setFlippingPage(null); render.clearShadow();
-    fc.setState("read"); fc.reset();
-    var book = $("book"); if (book) delete book.dataset.dir;
-  }
-  // 한 장 넘기기. dir: 1 다음, -1 이전
+  // 한 장 넘기기. dir: 1 다음, -1 이전. 넘어가는 움직임은 넘김 도구의 원래 방식 그대로다.
   function turn(dir, fromTop) {
     if (!flip || zoomOpen()) return false;
-    var f = flip, fc = fcOf(), render = f.getRender(), st = fc.getState();
+    var fc = fcOf(), st = fc.getState();
     if (st !== "read" && st !== "fold_corner") return false;
-    if (fc.calc) render.finishAnimation();        // 모서리가 살짝 들려 있던 것 정리
-    var rect = render.getRect(), pw = rect.pageWidth, H = rect.height;
-    var start = { x: dir > 0 ? rect.left + 2 * pw - 10 : 10, y: fromTop ? 1 : H - 2 };
-    if (!fc.start(start)) { fc.setState("read"); return false; }
-    fc.setState("flipping"); markDir();
-    var lift = Math.min(H * 0.2, pw * 0.32), N = 84, frames = [];
-    for (var i = 0; i <= N; i++) (function (e) {
-      var x = Math.min(pw - 2, pw - 2 * pw * e);
-      var arc = lift * Math.sin(Math.PI * e);
-      var y = fromTop ? 1 + arc : H - 1 - arc;
-      if (e >= 1) { x = -pw; y = fromTop ? 0 : H; }
-      frames.push(function () { fc.do({ x: x, y: y }); });
-    })(easeInOut(i / N));
+    var corner = fromTop ? "top" : "bottom";
+    if (dir > 0) flip.flipNext(corner); else flip.flipPrev(corner);
+    if (fc.getState() !== "flipping") return false;      // 첫 면·마지막 면이라 넘어가지 않은 경우
     playFlipSound();
-    render.startAnimation(frames, calm ? 260 : 1050, function () { endFlip(f, true); });
     return true;
   }
 
@@ -815,7 +779,12 @@
       // 터치로 위아래로 움직이면 스크롤이므로 넘김을 시작하지 않는다
       if (!(ptr.touch && Math.abs(dy) > Math.abs(dx))) {
         if (fc.calc) render.finishAnimation();
-        if (fc.start(libPos(ptr.x, ptr.y))) { ptr.folding = true; fc.setState("user_fold"); markDir(); }
+        // 어느 쪽으로 넘길지는 '누른 자리'가 아니라 '끄는 방향'으로 정한다.
+        // (오른쪽으로 끌면 이전 면, 왼쪽으로 끌면 다음 면. 한 면만 보이는 휴대폰에서도 어디를 잡든 된다.)
+        var rect = render.getRect(), pw = rect.pageWidth;
+        var portrait = render.getOrientation() === "portrait";
+        var startX = dx > 0 ? rect.left + (portrait ? pw : 0) + 5 : rect.left + 2 * pw - 5;
+        if (fc.start({ x: startX, y: libPos(ptr.x, ptr.y).y })) { ptr.folding = true; fc.setState("user_fold"); }
         else fc.setState("read");
       }
     }
@@ -835,15 +804,8 @@
       // 넘기려는 방향으로 40픽셀 넘게 끌었거나 절반을 넘겼으면 마저 넘기고, 아니면 되돌린다
       var complete = from.x <= 0 || (forward ? dx < -40 : dx > 40);
       var to = { x: complete ? -pw : pw, y: cornerY };
-      var N = 44, frames = [];
-      for (var i = 1; i <= N; i++) (function (e) {
-        var x = from.x + (to.x - from.x) * e, y = from.y + (to.y - from.y) * e;
-        frames.push(function () { fc.do({ x: x, y: y }); });
-      })(easeOut(i / N));
-      fc.setState("flipping");
       if (complete) playFlipSound();
-      var dist = Math.abs(to.x - from.x) / (2 * pw);
-      render.startAnimation(frames, calm ? 200 : 300 + 550 * dist, function () { endFlip(f, complete); });
+      fc.animateFlippingTo(from, to, complete);     // 넘기거나 되돌리고, 끝나면 스스로 정리한다
       return;
     }
     if (fc.getState() === "user_fold") fc.setState("read");
@@ -872,7 +834,7 @@
     var sp = spot(e.clientX, e.clientY);
     book.style.cursor = !sp ? "" : (sp.onCorner ? "pointer" : "zoom-in");
     var fc = fcOf(), st = fc.getState();
-    if (st === "read" || st === "fold_corner") { fc.showCorner(libPos(e.clientX, e.clientY)); markDir(); }
+    if (st === "read" || st === "fold_corner") { fc.showCorner(libPos(e.clientX, e.clientY)); }
   });
   stage.addEventListener("mouseleave", function () {
     var fc = fcOf(); if (!fc || ptr) return;
@@ -945,7 +907,7 @@
       var low = audioCtx.createBiquadFilter(); low.type = "lowpass"; low.frequency.value = 1100;
       var g2 = audioCtx.createGain(); g2.gain.value = 0.3;
       pat.connect(low); low.connect(g2); g2.connect(audioCtx.destination);
-      pat.start(now + (calm ? 0.2 : 0.78));
+      pat.start(now + 0.72);
     } catch (e) {}
   }
 

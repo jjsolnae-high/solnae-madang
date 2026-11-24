@@ -29,8 +29,8 @@
 
   /* 위쪽 바 */
   header {
-    display: flex; align-items: center; gap: 12px;
-    padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
     border-bottom: 1px solid var(--line);
     flex: none;
   }
@@ -57,8 +57,8 @@
   .brand .rule { width: 1px; height: 26px; background: var(--line); flex: none; }
   .brand [hidden] { display: none !important; }
   /* 신문 제호 로고: 진한 초록이라 종이색 바탕 위에 올린다 */
-  .nameplate { flex: none; background: var(--paper); border-radius: 6px; padding: 5px 10px; line-height: 0; }
-  .brand .nameplate img { height: 44px; }
+  .nameplate { flex: none; background: var(--paper); border-radius: 6px; padding: 3px 9px; line-height: 0; }
+  .brand .nameplate img { height: 36px; }
   .masthead {
     text-align: right;
     font-family: "Nanum Myeongjo", "Noto Serif KR", "Batang", serif;
@@ -68,10 +68,9 @@
 
   /* 신문이 놓이는 자리 */
   main {
-    flex: 1; min-height: 0; position: relative; padding: 10px 10px 6px;
-    overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable both-edges;
+    flex: 1; min-width: 0; min-height: 0; position: relative; padding: 6px;
+    overflow-x: hidden; overflow-y: auto;
   }
-  .hint { flex: none; text-align: center; font-size: 12px; color: var(--muted); padding: 0 12px; }
   #stage { width: 100%; height: 100%; position: relative; overflow: visible; }
   #status { position: fixed; }
   #book { position: absolute; cursor: zoom-in; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
@@ -97,22 +96,32 @@
   .bar { width: min(240px, 60vw); height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 
-  /* 아래쪽 조작 바 */
-  .controls {
-    flex: none; display: flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 8px 12px;
-  }
-  .controls button, .controls a {
-    font: inherit; font-size: 14px; color: var(--text); text-decoration: none;
+  /* 위쪽 바의 보기 버튼들 */
+  .tools { display: flex; align-items: center; gap: 6px; flex: none; }
+  .tools button, .tools a {
+    font: inherit; font-size: 14px; color: var(--text); text-decoration: none; white-space: nowrap;
     background: rgba(255,255,255,.07); border: 1px solid var(--line);
-    border-radius: 8px; min-width: 44px; height: 44px; padding: 0 14px;
+    border-radius: 8px; min-width: 40px; height: 40px; padding: 0 12px;
     display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
   }
-  .controls button:disabled { opacity: .35; cursor: default; }
-  .controls button:focus-visible, .controls a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .controls [hidden] { display: none; }
-  #pageInfo { min-width: 92px; text-align: center; font-variant-numeric: tabular-nums; font-size: 14px; }
-  .gap { width: 8px; }
+  .tools button:disabled { opacity: .35; cursor: default; }
+  .tools button:focus-visible, .tools a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tools [hidden] { display: none; }
+  #pageInfo { margin-left: 8px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* 신문 양옆의 넘김 화살표 */
+  .viewer { flex: 1; min-height: 0; position: relative; display: flex; }
+  .nav {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+    width: 46px; height: 84px; border-radius: 12px; font-size: 20px; cursor: pointer;
+    color: #fff; background: rgba(20,18,16,.6); border: 1px solid rgba(255,255,255,.28);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .nav.prev { left: 8px; }
+  .nav.next { right: 8px; }
+  .nav:hover:not(:disabled) { background: rgba(20,18,16,.85); }
+  .nav:disabled { opacity: 0; pointer-events: none; }
+  .nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* 확대 보기 */
   #zoom {
@@ -146,21 +155,29 @@
 
   footer {
     flex: none; text-align: center; font-size: 11px; color: var(--muted);
-    padding: 2px 12px calc(8px + env(safe-area-inset-bottom));
+    padding: 3px 12px calc(4px + env(safe-area-inset-bottom));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  #hint:not(:empty)::after { content: "  ·  "; white-space: pre; }
 
   @media (max-width: 760px) {
     .brand { gap: 9px; }
     .brand .full, .brand .rule { display: none; }
     .brand .emblem { display: block; height: 34px; }
-    .brand .nameplate { padding: 4px 8px; }
-    .brand .nameplate img { height: 36px; }
+    .brand .nameplate img { height: 32px; }
     .picker { max-width: 44vw; }
+    /* 좁은 화면: 보기 버튼은 둘째 줄로 */
+    .tools { order: 3; width: 100%; justify-content: center; }
+    .tools button, .tools a { height: 36px; }
+    .nav { width: 36px; height: 64px; font-size: 16px; }
+    .nav.prev { left: 2px; } .nav.next { right: 2px; }
   }
   @media (max-width: 520px) {
     .masthead { font-size: 15px; }
-    main { padding: 10px 6px; }
-    .controls .label { display: none; }
+    main { padding: 4px; }
+    #hint { display: none; }
+    .tools { gap: 4px; }
+    .tools button, .tools a { padding: 0 9px; font-size: 13px; }
   }
   @media (prefers-reduced-motion: reduce) { #book { transition: none; } }
 </style>
@@ -171,6 +188,13 @@
   <div class="picker">
     <select id="issueSelect" aria-label="신문 호 선택"></select>
   </div>
+  <div class="tools">
+    <button id="fitBtn" aria-pressed="false"></button>
+    <button id="zoomBtn" aria-label="확대해서 보기">🔍<span class="label">&nbsp;확대</span></button>
+    <button id="fullBtn" aria-label="전체 화면">⛶<span class="label">&nbsp;전체 화면</span></button>
+    <a id="pdfLink" target="_blank" rel="noopener" hidden>PDF<span class="label">&nbsp;원본</span></a>
+    <span id="pageInfo" aria-live="polite">–</span>
+  </div>
   <div class="brand">
     <img class="full" id="logoFull" alt="" hidden>
     <img class="emblem" id="logoEmblem" alt="" hidden>
@@ -180,24 +204,16 @@
   </div>
 </header>
 
-<main>
-  <div id="stage"></div>
-  <div id="status">
-    <div id="statusText">신문을 펼치는 중…</div>
-    <div class="bar" id="statusBar"><i></i></div>
-  </div>
-</main>
-
-<div class="hint" id="hint"></div>
-<div class="controls">
-  <button id="prevBtn" aria-label="이전 면">◀</button>
-  <div id="pageInfo" aria-live="polite">–</div>
-  <button id="nextBtn" aria-label="다음 면">▶</button>
-  <span class="gap"></span>
-  <button id="fitBtn" aria-pressed="false"></button>
-  <button id="zoomBtn" aria-label="확대해서 보기">🔍<span class="label">&nbsp;확대</span></button>
-  <button id="fullBtn" aria-label="전체 화면">⛶<span class="label">&nbsp;전체 화면</span></button>
-  <a id="pdfLink" target="_blank" rel="noopener" hidden>PDF<span class="label">&nbsp;원본</span></a>
+<div class="viewer">
+  <main>
+    <div id="stage"></div>
+    <div id="status">
+      <div id="statusText">신문을 펼치는 중…</div>
+      <div class="bar" id="statusBar"><i></i></div>
+    </div>
+  </main>
+  <button class="nav prev" id="prevBtn" aria-label="이전 면">◀</button>
+  <button class="nav next" id="nextBtn" aria-label="다음 면">▶</button>
 </div>
 
 <div id="zoom" hidden><div id="zoomInner"></div></div>
@@ -207,7 +223,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="copyright"></span> · v1.7.0</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v1.8.0</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -255,10 +271,15 @@
   var READABLE = 900, BIG_MAX = 1100;   // 한 면 너비(픽셀): 이보다 작으면 본문이 안 읽힌다 / 크게 보기 최대
   var bigMode = true;                   // 처음부터 읽히는 크기로 보여 준다
   try { if (localStorage.getItem("madang-fit") === "whole") bigMode = false; } catch (e) {}
+  var SCROLLBAR = (function () {
+    var d = document.createElement("div"); d.style.cssText = "position:absolute;top:-99px;width:60px;height:60px;overflow:scroll";
+    document.body.appendChild(d); var w = d.offsetWidth - d.clientWidth; d.remove(); return w;
+  })();
   function avail() {                    // 신문을 놓을 수 있는 자리
     var cs = getComputedStyle(mainEl);
     return {
-      w: Math.floor(mainEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)),
+      // 세로 스크롤바가 생겨도 너비가 변하지 않도록 스크롤바 자리는 늘 빼고 계산한다
+      w: Math.floor(mainEl.offsetWidth - SCROLLBAR - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)),
       h: Math.floor(mainEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom))
     };
   }
@@ -485,9 +506,10 @@
     var scrolls = ph > H;
     stage.style.height = Math.max(H, ph) + "px";
     mainEl.style.overflowY = scrolls ? "auto" : "hidden";
+    nextBtn.style.right = scrolls ? (8 + SCROLLBAR) + "px" : "";   // 스크롤바를 가리지 않게
     fitBtn.textContent = bigMode ? "한눈에 보기" : "크게 보기";
     fitBtn.setAttribute("aria-pressed", String(bigMode));
-    $("hint").textContent = (scrolls ? "아래로 스크롤해서 읽습니다 · " : "") + "면을 누르면 더 크게 볼 수 있습니다 · 넘길 때는 모서리를 끌거나 ◀ ▶";
+    $("hint").textContent = (scrolls ? "아래로 스크롤해서 읽기 · " : "") + "면을 누르면 확대 · 양옆 화살표나 모서리 끌기로 넘기기";
     var dpr = DPR();
 
     var book = document.createElement("div");

@@ -223,7 +223,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v1.8.0</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v1.8.1</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -365,7 +365,12 @@
       });
       return task.promise.then(function () {
         if (cancelled) return false;
-        if (ss > 1) { shrinkDarken(target, canvas); target.width = target.height = 0; }
+        if (ss > 1) {
+          // 글씨가 작을 때만 획을 진하게 살린다. 크게 확대한 상태에서 진하게 하면 글자 가장자리가 거칠어진다.
+          var strength = 0.6 * Math.max(0, Math.min(1, (1500 - cssPageWidth) / 600));
+          shrinkDarken(target, canvas, strength);
+          target.width = target.height = 0;
+        }
         return true;
       });
     }).catch(function (e) {
@@ -376,7 +381,7 @@
   }
   // 2배 그림을 절반으로 줄인다. 네 점의 평균만 쓰면 가는 획이 회색으로 옅어지므로,
   // 밝은 바탕 위의 어두운 획일수록 가장 어두운 점 쪽으로 당겨 준다. (사진처럼 어두운 곳은 거의 그대로)
-  function shrinkDarken(src, dst) {
+  function shrinkDarken(src, dst, strength) {
     var sw = src.width, w = dst.width, h = dst.height;
     var sd = src.getContext("2d").getImageData(0, 0, sw, src.height).data;
     var ctx = dst.getContext("2d", { alpha: false });
@@ -391,7 +396,7 @@
           a = sd[i + k]; b = sd[i + 4 + k]; c = sd[j + k]; e = sd[j + 4 + k];
           var m = a > b ? a : b; if (c > m) m = c; if (e > m) m = e; if (m > mx) mx = m;
         }
-        var bias = 0.6 * (mx / 255) * (mx / 255);
+        var bias = strength * (mx / 255) * (mx / 255);
         for (k = 0; k < 3; k++) {
           a = sd[i + k]; b = sd[i + 4 + k]; c = sd[j + k]; e = sd[j + 4 + k];
           var mn = a < b ? a : b; if (c < mn) mn = c; if (e < mn) mn = e;

@@ -67,9 +67,13 @@
   }
 
   /* 신문이 놓이는 자리 */
-  main { flex: 1; min-height: 0; position: relative; padding: 10px 10px 6px; }
+  main {
+    flex: 1; min-height: 0; position: relative; padding: 10px 10px 6px;
+    overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable both-edges;
+  }
   .hint { flex: none; text-align: center; font-size: 12px; color: var(--muted); padding: 0 12px; }
   #stage { width: 100%; height: 100%; position: relative; overflow: visible; }
+  #status { position: fixed; }
   #book { position: absolute; cursor: zoom-in; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
   .page { background: var(--paper); overflow: hidden; }
   .page img, .page canvas {
@@ -184,12 +188,13 @@
   </div>
 </main>
 
-<div class="hint">면을 누르면 크게 볼 수 있습니다 · 넘길 때는 모서리를 끌거나 ◀ ▶</div>
+<div class="hint" id="hint"></div>
 <div class="controls">
   <button id="prevBtn" aria-label="이전 면">◀</button>
   <div id="pageInfo" aria-live="polite">–</div>
   <button id="nextBtn" aria-label="다음 면">▶</button>
   <span class="gap"></span>
+  <button id="fitBtn" aria-pressed="false"></button>
   <button id="zoomBtn" aria-label="확대해서 보기">🔍<span class="label">&nbsp;확대</span></button>
   <button id="fullBtn" aria-label="전체 화면">⛶<span class="label">&nbsp;전체 화면</span></button>
   <a id="pdfLink" target="_blank" rel="noopener" hidden>PDF<span class="label">&nbsp;원본</span></a>
@@ -202,7 +207,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="copyright"></span> · v1.5.0</footer>
+<footer><span id="copyright"></span> · v1.6.0</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -246,6 +251,22 @@
   var loadToken = 0;       // 호를 바꿀 때마다 올라간다
   var drawToken = 0;       // 화면을 다시 짤 때마다 올라간다
   var DPR = function () { return Math.min(window.devicePixelRatio || 1, 4); };
+  var mainEl = document.querySelector("main"), fitBtn = $("fitBtn");
+  var READABLE = 900, BIG_MAX = 1100;   // 한 면 너비(픽셀): 이보다 작으면 본문이 안 읽힌다 / 크게 보기 최대
+  var bigMode = true;                   // 처음부터 읽히는 크기로 보여 준다
+  try { if (localStorage.getItem("madang-fit") === "whole") bigMode = false; } catch (e) {}
+  function avail() {                    // 신문을 놓을 수 있는 자리
+    var cs = getComputedStyle(mainEl);
+    return {
+      w: Math.floor(mainEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)),
+      h: Math.floor(mainEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom))
+    };
+  }
+  fitBtn.addEventListener("click", function () {
+    bigMode = !bigMode;
+    try { localStorage.setItem("madang-fit", bigMode ? "big" : "whole"); } catch (e) {}
+    buildBook();
+  });
 
   /* ── 목록(드롭다운) ── */
   ISSUES.forEach(function (it, i) {
@@ -401,12 +422,27 @@
     if (flip) { try { flip.destroy(); } catch (e) {} flip = null; }
     stage.innerHTML = "";
 
-    var W = stage.clientWidth, H = stage.clientHeight, r = data.ratio;
-    var two = Math.min(W / 2, H * r);   // 두 면을 펼쳤을 때 한 면의 너비
-    var one = Math.min(W, H * r);       // 한 면만 볼 때의 너비
+    stage.style.height = "";
+    mainEl.scrollTop = 0;
+    var a = avail(), W = a.w, H = a.h, r = data.ratio;
+    var two = Math.min(W / 2, H * r);   // 한눈에 보기: 두 면을 펼쳤을 때 한 면의 너비
+    var one = Math.min(W, H * r);       // 한눈에 보기: 한 면만 볼 때의 너비
     landscape = two >= one * 0.62;      // 화면이 넓으면 두 면 펼침, 좁으면 한 면
     var pw = Math.floor(landscape ? two : one);
+    // 크게 보기: 본문이 읽히도록 한 면을 화면 너비에 맞춰 키우고, 넘치는 높이는 스크롤한다
+    var canBig = W >= 700 && pw < READABLE;
+    fitBtn.hidden = !canBig;
+    if (canBig && bigMode) {
+      if (W / 2 >= 850) { landscape = true; pw = Math.min(Math.floor(W / 2), BIG_MAX); }
+      else { landscape = false; pw = Math.min(W, BIG_MAX); }
+    }
     var ph = Math.floor(pw / r);
+    var scrolls = ph > H;
+    stage.style.height = Math.max(H, ph) + "px";
+    mainEl.style.overflowY = scrolls ? "auto" : "hidden";
+    fitBtn.textContent = bigMode ? "한눈에 보기" : "크게 보기";
+    fitBtn.setAttribute("aria-pressed", String(bigMode));
+    $("hint").textContent = (scrolls ? "아래로 스크롤해서 읽습니다 · " : "") + "면을 누르면 더 크게 볼 수 있습니다 · 넘길 때는 모서리를 끌거나 ◀ ▶";
     var dpr = DPR();
 
     var book = document.createElement("div");
@@ -416,7 +452,7 @@
     book.style.height = ph + "px";
     // 반 픽셀이라도 어긋나면 글자가 번지므로 위치를 정수 픽셀에 맞춘다
     book.style.left = Math.floor((W - bw) / 2) + "px";
-    book.style.top = Math.floor((H - ph) / 2) + "px";
+    book.style.top = Math.max(0, Math.floor((H - ph) / 2)) + "px";
     book.dataset.pw = pw;
     var inner = document.createElement("div");
     var canvases = [];
@@ -445,26 +481,32 @@
       showCover: true, usePortrait: true, autoSize: true,
       drawShadow: true, maxShadowOpacity: 0.55,
       flippingTime: 900, startPage: pageIndex,
-      mobileScrollSupport: false, swipeDistance: 20,
+      mobileScrollSupport: scrolls, swipeDistance: 20,
       disableFlipByClick: true        // 면을 누르면 넘기지 않고 확대한다 (모서리는 그대로 넘김)
     });
     flip.loadFromHTML(inner.querySelectorAll(".page"));
-    flip.on("flip", function (e) { pageIndex = e.data; updateControls(); });
+    flip.on("flip", function (e) {
+      pageIndex = e.data; updateControls();
+      if (mainEl.scrollTop > 0) mainEl.scrollTo({ top: 0, behavior: "smooth" });   // 새 면은 맨 위부터
+    });
     updateControls();
 
     if (data.urls) { hideStatus(); return; }
     // 지금 보이는 면부터 가까운 순서로 그린다
     var order = canvases.map(function (_, k) { return k; })
       .sort(function (a, b) { return Math.abs(a - pageIndex) - Math.abs(b - pageIndex); });
-    (async function () {
-      for (var k = 0; k < order.length; k++) {
+    showStatus("신문을 펼치는 중…", null);
+    var next = 0, drawn = 0;
+    async function worker() {             // 세 면씩 동시에 그려서 빈 면이 보이는 시간을 줄인다
+      while (next < order.length && myDraw === drawToken) {
+        var k = order[next++];
+        await drawPage(data, k + 1, canvases[k], pw).done;
         if (myDraw !== drawToken) return;
-        if (k === 0) showStatus("신문을 펼치는 중…", null);
-        await drawPage(data, order[k] + 1, canvases[order[k]], pw).done;
-        if (myDraw !== drawToken) return;
-        if (k === 0) hideStatus();
+        canvases[k].dataset.done = "1";
+        if (++drawn === 1) hideStatus();
       }
-    })();
+    }
+    worker(); worker(); worker();
   }
 
   function updateControls() {
@@ -601,7 +643,8 @@
     zoomBox.scrollLeft = zoomBox.scrollTop = 0;
     // 처음 배율: 한 면의 너비가 1100픽셀쯤(본문 글씨가 편하게 읽히는 크기) 되도록
     var vw = zoomBox.clientWidth, vh = zoomBox.clientHeight;
-    var z0 = 1100 * zPages.length / vw;
+    var bookEl = $("book"), curPw = bookEl ? +bookEl.dataset.pw : 0;
+    var z0 = Math.max(1100, Math.round(curPw * 1.5)) * zPages.length / vw;
     if (vw < 700) z0 = Math.max(z0, 1.15);
     Z_MIN = Math.min(1, z0);            // 넓은 화면에서는 화면 너비보다 작게도 볼 수 있다
     setZoom(z0, 0, 0);
@@ -716,8 +759,9 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
       if (zoomOpen()) setZoom(zLevel);
-      if (stage.clientWidth === lastW && stage.clientHeight === lastH && DPR() === lastDpr) return;
-      lastW = stage.clientWidth; lastH = stage.clientHeight; lastDpr = DPR();
+      var a = avail();
+      if (a.w === lastW && a.h === lastH && DPR() === lastDpr) return;
+      lastW = a.w; lastH = a.h; lastDpr = DPR();
       buildBook();
     }, 200);
   });
@@ -725,7 +769,7 @@
   /* ── 시작: 주소 끝의 #번호로 특정 호를 바로 열 수 있다 ── */
   var start = 0, h = parseInt(location.hash.slice(1), 10);
   if (h >= 1 && h <= ISSUES.length) start = ISSUES.length - h;
-  lastW = stage.clientWidth; lastH = stage.clientHeight;
+  lastW = avail().w; lastH = avail().h;
   openIssue(start);
 })();
 </script>

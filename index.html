@@ -74,7 +74,7 @@
   }
   #book { flex: none; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
   .page { background: var(--paper); overflow: hidden; }
-  .page img {
+  .page img, .page canvas {
     width: 100%; height: 100%; display: block; object-fit: fill;
     pointer-events: none; user-select: none; -webkit-user-drag: none;
   }
@@ -121,10 +121,12 @@
   #zoom[hidden] { display: none; }
   #zoom.dragging { cursor: grabbing; }
   #zoomInner { display: flex; margin: 0 auto; min-height: 100%; align-items: flex-start; }
-  #zoomInner img {
-    flex: 1 1 0; min-width: 0; width: 100%; height: auto; display: block; background: var(--paper);
+  .zpage { flex: 1 1 0; min-width: 0; position: relative; background: #fff; overflow: hidden; }
+  .zpage img, .zpage canvas.base {
+    width: 100%; height: 100%; display: block;
     user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none;
   }
+  .zpage canvas.sharp { position: absolute; display: block; }
   .zoombar {
     position: fixed; z-index: 51; right: 12px; top: calc(12px + env(safe-area-inset-top));
     display: flex; gap: 6px; padding: 6px; border-radius: 12px;
@@ -199,7 +201,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="copyright"></span> · v1.3.0</footer>
+<footer><span id="copyright"></span> · v1.4.0</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -235,12 +237,14 @@
   $("masthead").textContent = SITE.name || "학교신문";
   $("copyright").textContent = "© " + new Date().getFullYear() + " " + (SITE.school || SITE.name || "");
 
-  var cache = new Map();   // 호별로 만들어 둔 면 그림
-  var current = null;      // { urls, ratio }
+  var cache = new Map();   // 호별로 열어 둔 신문
+  var current = null;      // { count, ratio, pdf?, urls? }
   var flip = null;         // 넘김 효과 객체
   var landscape = true;
   var pageIndex = 0;
-  var loadToken = 0;
+  var loadToken = 0;       // 호를 바꿀 때마다 올라간다
+  var drawToken = 0;       // 화면을 다시 짤 때마다 올라간다
+  var DPR = function () { return Math.min(window.devicePixelRatio || 1, 4); };
 
   /* ── 목록(드롭다운) ── */
   ISSUES.forEach(function (it, i) {
@@ -275,46 +279,40 @@
     return pdfReady;
   }
 
-  /* ── PDF의 각 면을 그림으로 바꾼다 ── */
-  async function renderPdf(file, token) {
+  /* ── PDF 열기: 면을 그림 파일로 바꿔 두지 않고, 보이는 크기에 딱 맞춰 그때그때 그린다 ── */
+  async function openPdf(file) {
     var lib = await loadPdfLib();
-    var pdf = await lib.getDocument({ url: file, cMapUrl: "lib/cmaps/", cMapPacked: true }).promise;
-    var urls = [], ratio = 0.7;
-    var targetW = Math.min(2400, Math.max(1600, Math.round(window.innerWidth * (window.devicePixelRatio || 1))));
-    for (var n = 1; n <= pdf.numPages; n++) {
-      if (token !== loadToken) return null;
-      showStatus("신문을 펼치는 중… (" + n + " / " + pdf.numPages + "면)", (n - 1) / pdf.numPages);
-      var page = await pdf.getPage(n);
-      var base = page.getViewport({ scale: 1 });
-      if (n === 1) ratio = base.width / base.height;
-      var vp = page.getViewport({ scale: targetW / base.width });
-      var cv = document.createElement("canvas");
-      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-      await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
-      var blob = await new Promise(function (r) { cv.toBlob(r, "image/jpeg", 0.94); });
-      urls.push(URL.createObjectURL(blob));
-      cv.width = cv.height = 0;
-      page.cleanup();
-    }
-    return { urls: urls, ratio: ratio, pdf: pdf, hi: {} };
+    var task = lib.getDocument({ url: file, cMapUrl: "lib/cmaps/", cMapPacked: true });
+    task.onProgress = function (p) { if (p && p.total) showStatus("신문을 가져오는 중…", Math.min(1, p.loaded / p.total)); };
+    var pdf = await task.promise;
+    var first = await pdf.getPage(1);
+    var vp = first.getViewport({ scale: 1 });
+    return { pdf: pdf, count: pdf.numPages, ratio: vp.width / vp.height, pages: { 1: Promise.resolve(first) } };
   }
-
-  /* ── 확대 보기용: 한 면을 훨씬 크게 다시 그린다 (글자가 또렷해진다) ── */
-  function renderHi(data, n) {
-    if (!data.pdf) return Promise.resolve(null);
-    if (!data.hi[n]) data.hi[n] = (async function () {
-      var page = await data.pdf.getPage(n + 1);
+  function getPage(data, n) {      // n은 1부터
+    if (!data.pages[n]) data.pages[n] = data.pdf.getPage(n);
+    return data.pages[n];
+  }
+  // 한 면의 일부(또는 전체)를 캔버스에 그린다. 캔버스 크기 = 실제 화면 점 개수라서 흐려지지 않는다.
+  function drawPage(data, n, canvas, cssPageWidth, offX, offY) {
+    var task = null, cancelled = false;
+    var done = getPage(data, n).then(function (page) {
+      if (cancelled) return false;
       var base = page.getViewport({ scale: 1 });
-      var w = Math.min(3200, Math.sqrt(15e6 * base.width / base.height));
-      var vp = page.getViewport({ scale: w / base.width });
-      var cv = document.createElement("canvas");
-      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-      await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
-      var blob = await new Promise(function (r) { cv.toBlob(r, "image/jpeg", 0.92); });
-      cv.width = cv.height = 0; page.cleanup();
-      return URL.createObjectURL(blob);
-    })().catch(function (e) { console.error(e); delete data.hi[n]; return null; });
-    return data.hi[n];
+      var dpr = DPR();
+      var vp = page.getViewport({ scale: cssPageWidth * dpr / base.width });
+      task = page.render({
+        canvasContext: canvas.getContext("2d", { alpha: false }),
+        viewport: vp,
+        transform: [1, 0, 0, 1, -(offX || 0) * dpr, -(offY || 0) * dpr],
+        background: "#ffffff"
+      });
+      return task.promise.then(function () { return true; });
+    }).catch(function (e) {
+      if (e && e.name === "RenderingCancelledException") return false;
+      console.error(e); return false;
+    });
+    return { done: done, cancel: function () { cancelled = true; if (task) task.cancel(); } };
   }
 
   /* ── 견본 신문 (올린 PDF가 없을 때) ── */
@@ -353,7 +351,7 @@
       }
       urls.push(cv.toDataURL("image/jpeg", 0.85));
     }
-    return { urls: urls, ratio: W / H };
+    return { urls: urls, count: total, ratio: W / H };
   }
 
   /* ── 호 열기 ── */
@@ -363,6 +361,7 @@
     select.value = i;
     if (zoomOpen()) closeZoom();
     destroyBook();
+    current = null;
     pageIndex = 0;
     pdfLink.hidden = !!issue.demo;
     if (!issue.demo) pdfLink.href = issue.file;
@@ -370,13 +369,12 @@
       var key = issue.demo ? "__demo" : issue.file;
       var data = cache.get(key);
       if (!data) {
-        showStatus("신문을 펼치는 중…", 0);
-        data = issue.demo ? renderDemo() : await renderPdf(issue.file, token);
-        if (!data || token !== loadToken) return;
+        showStatus("신문을 가져오는 중…", 0);
+        data = issue.demo ? renderDemo() : await openPdf(issue.file);
+        if (token !== loadToken) return;
         cache.set(key, data);
       }
       current = data;
-      hideStatus();
       buildBook();
       if (!issue.demo && history.replaceState) history.replaceState(null, "", "#" + (ISSUES.length - i));
     } catch (e) {
@@ -389,6 +387,7 @@
   }
 
   function destroyBook() {
+    drawToken++;
     if (flip) { try { flip.destroy(); } catch (e) {} flip = null; }
     stage.innerHTML = "";
     updateControls();
@@ -397,46 +396,72 @@
   /* ── 화면 크기에 맞춰 신문을 놓는다 ── */
   function buildBook() {
     if (!current) return;
+    var data = current, myDraw = ++drawToken;
     if (flip) { try { flip.destroy(); } catch (e) {} flip = null; }
     stage.innerHTML = "";
 
-    var W = stage.clientWidth, H = stage.clientHeight, r = current.ratio;
+    var W = stage.clientWidth, H = stage.clientHeight, r = data.ratio;
     var two = Math.min(W / 2, H * r);   // 두 면을 펼쳤을 때 한 면의 너비
     var one = Math.min(W, H * r);       // 한 면만 볼 때의 너비
     landscape = two >= one * 0.62;      // 화면이 넓으면 두 면 펼침, 좁으면 한 면
     var pw = Math.floor(landscape ? two : one);
     var ph = Math.floor(pw / r);
+    var dpr = DPR();
 
     var book = document.createElement("div");
     book.id = "book";
     book.style.width = (landscape ? pw * 2 : pw) + "px";
     book.style.height = ph + "px";
     var inner = document.createElement("div");
-    current.urls.forEach(function (u, n) {
+    var canvases = [];
+    for (var n = 0; n < data.count; n++) {
       var d = document.createElement("div"); d.className = "page";
-      var img = document.createElement("img");
-      img.src = u; img.alt = (n + 1) + "면"; img.draggable = false;
-      d.appendChild(img); inner.appendChild(d);
-    });
+      if (data.urls) {
+        var img = document.createElement("img");
+        img.src = data.urls[n]; img.alt = (n + 1) + "면"; img.draggable = false;
+        d.appendChild(img);
+      } else {
+        var cv = document.createElement("canvas");
+        cv.width = Math.round(pw * dpr); cv.height = Math.round(ph * dpr);
+        cv.setAttribute("role", "img"); cv.setAttribute("aria-label", (n + 1) + "면");
+        d.appendChild(cv); canvases.push(cv);
+      }
+      inner.appendChild(d);
+    }
     book.appendChild(inner);
     stage.appendChild(book);
 
+    pageIndex = Math.min(pageIndex, data.count - 1);
     flip = new St.PageFlip(inner, {
       width: pw, height: ph, size: "stretch",
       minWidth: landscape ? Math.floor(pw / 2) : pw, maxWidth: 4000,
       minHeight: 50, maxHeight: 6000,
       showCover: true, usePortrait: true, autoSize: true,
       drawShadow: true, maxShadowOpacity: 0.55,
-      flippingTime: 900, startPage: Math.min(pageIndex, current.urls.length - 1),
+      flippingTime: 900, startPage: pageIndex,
       mobileScrollSupport: false, swipeDistance: 20
     });
     flip.loadFromHTML(inner.querySelectorAll(".page"));
     flip.on("flip", function (e) { pageIndex = e.data; updateControls(); });
     updateControls();
+
+    if (data.urls) { hideStatus(); return; }
+    // 지금 보이는 면부터 가까운 순서로 그린다
+    var order = canvases.map(function (_, k) { return k; })
+      .sort(function (a, b) { return Math.abs(a - pageIndex) - Math.abs(b - pageIndex); });
+    (async function () {
+      for (var k = 0; k < order.length; k++) {
+        if (myDraw !== drawToken) return;
+        if (k === 0) showStatus("신문을 펼치는 중…", null);
+        await drawPage(data, order[k] + 1, canvases[order[k]], pw).done;
+        if (myDraw !== drawToken) return;
+        if (k === 0) hideStatus();
+      }
+    })();
   }
 
   function updateControls() {
-    var n = current && flip ? current.urls.length : 0;
+    var n = current && flip ? current.count : 0;
     var book = $("book");
     if (!n) {
       prevBtn.disabled = nextBtn.disabled = zoomBtn.disabled = true;
@@ -476,17 +501,19 @@
     else if (e.key === "ArrowLeft" || e.key === "PageUp") flip.flipPrev();
   });
 
-  /* ── 확대 보기 ── */
+  /* ── 확대 보기 ──
+     확대하거나 움직일 때마다, 지금 화면에 보이는 부분만 그 크기에 딱 맞춰 PDF에서 다시 그린다.
+     그래서 아무리 확대해도 글자가 깨지지 않는다. */
   var zoomBox = $("zoom"), zoomInner = $("zoomInner"), zoomBar = $("zoomBar"), zoomBtn = $("zoomBtn");
-  var zLevel = 1, zPages = 1, Z_MIN = 1, Z_MAX = 6;
+  var zLevel = 1, zPages = [], Z_MIN = 1, Z_MAX = 12, sharpTimer = null, sharpJobs = [];
 
   function zoomOpen() { return !zoomBox.hidden; }
   function viewPages() {
-    var n = current.urls.length;
+    var n = current.count;
     if (landscape && pageIndex > 0 && pageIndex + 1 < n) return [pageIndex, pageIndex + 1];
     return [pageIndex];
   }
-  // 확대 배율을 바꾸되, 화면의 (cx, cy) 지점이 가리키던 곳이 그대로 있도록 스크롤을 맞춘다
+  // 배율을 바꾸되, 화면의 (cx, cy) 지점이 가리키던 곳이 그대로 있도록 스크롤을 맞춘다
   function setZoom(z, cx, cy) {
     z = Math.max(Z_MIN, Math.min(Z_MAX, z));
     var vw = zoomBox.clientWidth, vh = zoomBox.clientHeight;
@@ -498,36 +525,87 @@
     zLevel = z;
     zoomBox.scrollLeft = fx * newW - cx;
     zoomBox.scrollTop = fy * newW - cy;
+    scheduleSharp();
+  }
+  function scheduleSharp() {
+    clearTimeout(sharpTimer);
+    sharpTimer = setTimeout(sharpen, 140);
+  }
+  function sharpen() {
+    if (!zoomOpen() || !current || !current.pdf) return;
+    var data = current;
+    sharpJobs.forEach(function (j) { j.cancel(); });
+    sharpJobs = [];
+    var vw = zoomBox.clientWidth, vh = zoomBox.clientHeight, dpr = DPR();
+    var box = zoomBox.getBoundingClientRect();
+    // 화면보다 조금 넓게 그려 두어 살짝 움직여도 선명하게 (캔버스가 너무 커지지 않는 선에서)
+    var pad = Math.min(vw, vh) * 0.3;
+    while (pad > 0 && (vw + 2 * pad) * (vh + 2 * pad) * dpr * dpr > 14e6) pad = Math.floor(pad / 2);
+    zPages.forEach(function (zp) {
+      var r = zp.el.getBoundingClientRect();
+      var x0 = Math.max(r.left, box.left - pad), y0 = Math.max(r.top, box.top - pad);
+      var x1 = Math.min(r.right, box.left + vw + pad), y1 = Math.min(r.bottom, box.top + vh + pad);
+      if (x1 - x0 < 2 || y1 - y0 < 2) return;
+      var cv = document.createElement("canvas");
+      cv.width = Math.round((x1 - x0) * dpr); cv.height = Math.round((y1 - y0) * dpr);
+      cv.className = "sharp";
+      // 위치·크기를 면에 대한 비율로 적어 두면, 다시 그리기 전에 확대해도 제자리에 붙어 있다
+      cv.style.left = (x0 - r.left) / r.width * 100 + "%";
+      cv.style.top = (y0 - r.top) / r.height * 100 + "%";
+      cv.style.width = (x1 - x0) / r.width * 100 + "%";
+      cv.style.height = (y1 - y0) / r.height * 100 + "%";
+      var job = drawPage(data, zp.n + 1, cv, r.width, x0 - r.left, y0 - r.top);
+      sharpJobs.push(job);
+      job.done.then(function (ok) {
+        if (!ok || !zp.el.isConnected) return;
+        var old = zp.el.querySelectorAll("canvas.sharp");
+        zp.el.appendChild(cv);
+        old.forEach(function (o) { o.remove(); });
+      });
+    });
   }
   function openZoom() {
     if (!current || !flip || zoomOpen()) return;
     var data = current, pages = viewPages();
-    zPages = pages.length;
     zoomInner.innerHTML = "";
-    pages.forEach(function (n) {
-      var img = document.createElement("img");
-      img.src = data.urls[n]; img.alt = (n + 1) + "면"; img.draggable = false;
-      zoomInner.appendChild(img);
-      renderHi(data, n).then(function (u) { if (u && img.isConnected) img.src = u; });
+    var flipCanvases = stage.querySelectorAll(".page canvas");
+    zPages = pages.map(function (n) {
+      var el = document.createElement("div"); el.className = "zpage";
+      el.style.aspectRatio = String(data.ratio);
+      if (data.urls) {
+        var img = document.createElement("img"); img.src = data.urls[n]; img.alt = (n + 1) + "면"; img.draggable = false;
+        el.appendChild(img);
+      } else if (flipCanvases[n]) {
+        // 선명한 그림이 준비되기 전까지 넘겨보기 화면의 그림을 잠깐 깔아 둔다
+        var ph = document.createElement("canvas"); ph.className = "base";
+        ph.width = flipCanvases[n].width; ph.height = flipCanvases[n].height;
+        try { ph.getContext("2d").drawImage(flipCanvases[n], 0, 0); } catch (e) {}
+        el.appendChild(ph);
+      }
+      zoomInner.appendChild(el);
+      return { n: n, el: el };
     });
     zoomBox.hidden = false; zoomBar.hidden = false;
     zoomInner.style.width = zoomBox.clientWidth + "px";
     zoomBox.scrollLeft = zoomBox.scrollTop = 0;
     // 처음 배율: 한 면이 화면 너비의 1.6배(휴대폰은 2배)쯤 되도록
-    var start = (zoomBox.clientWidth < 700 ? 2 : 1.6) * zPages;
+    var start = (zoomBox.clientWidth < 700 ? 2 : 1.6) * zPages.length;
     setZoom(Math.max(1, start), 0, 0);
     $("zoomClose").focus();
   }
   function closeZoom() {
-    zoomBox.hidden = true; zoomBar.hidden = true; zoomInner.innerHTML = "";
+    clearTimeout(sharpTimer);
+    sharpJobs.forEach(function (j) { j.cancel(); }); sharpJobs = [];
+    zoomBox.hidden = true; zoomBar.hidden = true; zoomInner.innerHTML = ""; zPages = [];
     zoomBtn.focus();
   }
   zoomBtn.addEventListener("click", openZoom);
   $("zoomClose").addEventListener("click", closeZoom);
   $("zoomIn").addEventListener("click", function () { setZoom(zLevel * 1.4); });
   $("zoomOut").addEventListener("click", function () { setZoom(zLevel / 1.4); });
+  zoomBox.addEventListener("scroll", scheduleSharp, { passive: true });
   zoomBox.addEventListener("dblclick", function (e) {
-    setZoom(zLevel > zPages * 1.2 ? 1 : zLevel * 2, e.clientX, e.clientY);
+    setZoom(zLevel > zPages.length * 1.2 ? 1 : zLevel * 2, e.clientX, e.clientY);
   });
   zoomBox.addEventListener("wheel", function (e) {
     if (!e.ctrlKey && !e.metaKey) return;      // 그냥 휠은 위아래 이동, Ctrl+휠은 확대
@@ -577,13 +655,13 @@
     else (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
   });
 
-  var resizeTimer = null, lastW = 0, lastH = 0;
+  var resizeTimer = null, lastW = 0, lastH = 0, lastDpr = DPR();
   window.addEventListener("resize", function () {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
       if (zoomOpen()) setZoom(zLevel);
-      if (stage.clientWidth === lastW && stage.clientHeight === lastH) return;
-      lastW = stage.clientWidth; lastH = stage.clientHeight;
+      if (stage.clientWidth === lastW && stage.clientHeight === lastH && DPR() === lastDpr) return;
+      lastW = stage.clientWidth; lastH = stage.clientHeight; lastDpr = DPR();
       buildBook();
     }, 200);
   });

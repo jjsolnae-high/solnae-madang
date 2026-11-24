@@ -207,7 +207,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="copyright"></span> · v1.6.0</footer>
+<footer><span id="copyright"></span> · v1.6.1</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -305,8 +305,14 @@
   async function openPdf(file) {
     var lib = await loadPdfLib();
     var task = lib.getDocument({ url: file, cMapUrl: "lib/cmaps/", cMapPacked: true });
-    task.onProgress = function (p) { if (p && p.total) showStatus("신문을 가져오는 중…", Math.min(1, p.loaded / p.total)); };
+    // 파일이 열린 뒤에도 나머지를 계속 내려받으며 진행 알림이 오므로, 열린 뒤에는 무시한다
+    var opened = false, myLoad = loadToken;
+    task.onProgress = function (p) {
+      if (opened || myLoad !== loadToken || !p || !p.total) return;
+      showStatus("신문을 가져오는 중…", Math.min(1, p.loaded / p.total));
+    };
     var pdf = await task.promise;
+    opened = true;
     var first = await pdf.getPage(1);
     var vp = first.getViewport({ scale: 1 });
     return { pdf: pdf, count: pdf.numPages, ratio: vp.width / vp.height, pages: { 1: Promise.resolve(first) } };

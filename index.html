@@ -194,7 +194,6 @@
   <div class="tools">
     <button id="fitBtn" aria-pressed="false"></button>
     <button id="zoomBtn" aria-label="확대해서 보기">🔍<span class="label">&nbsp;확대</span></button>
-    <button id="soundBtn" aria-pressed="true"></button>
     <button id="fullBtn" aria-label="전체 화면">⛶<span class="label">&nbsp;전체 화면</span></button>
     <a id="pdfLink" target="_blank" rel="noopener" hidden>PDF<span class="label">&nbsp;원본</span></a>
     <span id="pageInfo" aria-live="polite">–</span>
@@ -227,7 +226,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v2.0.2</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v2.0.3</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -758,9 +757,7 @@
     if (st !== "read" && st !== "fold_corner") return false;
     var corner = fromTop ? "top" : "bottom";
     if (dir > 0) flip.flipNext(corner); else flip.flipPrev(corner);
-    if (fc.getState() !== "flipping") return false;      // 첫 면·마지막 면이라 넘어가지 않은 경우
-    playFlipSound();
-    return true;
+    return fc.getState() === "flipping";                 // 첫 면·마지막 면이면 넘어가지 않는다
   }
 
   var ptr = null, lastTouch = 0;
@@ -804,7 +801,6 @@
       // 넘기려는 방향으로 40픽셀 넘게 끌었거나 절반을 넘겼으면 마저 넘기고, 아니면 되돌린다
       var complete = from.x <= 0 || (forward ? dx < -40 : dx > 40);
       var to = { x: complete ? -pw : pw, y: cornerY };
-      if (complete) playFlipSound();
       fc.animateFlippingTo(from, to, complete);     // 넘기거나 되돌리고, 끝나면 스스로 정리한다
       return;
     }
@@ -856,60 +852,6 @@
     if (ptr && !e.touches.length && t) pointerUp(t.clientX, t.clientY);
   }, { passive: true });
   stage.addEventListener("touchcancel", function () { cancelPointer(); }, { passive: true });
-
-  /* ── 종이 넘기는 소리: 녹음 파일 없이 잡음을 다듬어 만든다 ── */
-  var audioCtx = null, soundOn = true, soundBtn = $("soundBtn");
-  try { soundOn = localStorage.getItem("madang-sound") !== "off"; } catch (e) {}
-  function showSound() {
-    soundBtn.textContent = soundOn ? "🔊" : "🔇";
-    soundBtn.setAttribute("aria-pressed", String(soundOn));
-    soundBtn.setAttribute("aria-label", soundOn ? "넘기는 소리 끄기" : "넘기는 소리 켜기");
-    soundBtn.title = soundOn ? "넘기는 소리 켜짐" : "넘기는 소리 꺼짐";
-  }
-  showSound();
-  soundBtn.addEventListener("click", function () {
-    soundOn = !soundOn;
-    try { localStorage.setItem("madang-sound", soundOn ? "on" : "off"); } catch (e) {}
-    showSound();
-    if (soundOn) playFlipSound();
-  });
-  function noise(seconds, shape) {
-    var n = Math.floor(audioCtx.sampleRate * seconds), buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
-    var d = buf.getChannelData(0);
-    for (var i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * shape(i / n);
-    return buf;
-  }
-  function playFlipSound() {
-    if (!soundOn) return;
-    try {
-      var AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return;
-      audioCtx = audioCtx || new AC();
-      if (audioCtx.state === "suspended") audioCtx.resume();
-      var now = audioCtx.currentTime;
-      // ① 스윽: 종이가 공기를 가르며 넘어가는 소리 (점점 커졌다 잦아들고, 음색이 높아졌다 내려온다)
-      var swish = audioCtx.createBufferSource();
-      swish.buffer = noise(0.62, function (t) {
-        var env = Math.pow(Math.sin(Math.PI * Math.pow(t, 0.8)), 1.6);
-        var flutter = 0.75 + 0.25 * Math.sin(t * 46) * Math.sin(t * 17);     // 종이의 떨림
-        return env * flutter;
-      });
-      var band = audioCtx.createBiquadFilter(); band.type = "bandpass"; band.Q.value = 0.8;
-      band.frequency.setValueAtTime(1400, now);
-      band.frequency.linearRampToValueAtTime(4200, now + 0.3);
-      band.frequency.linearRampToValueAtTime(2200, now + 0.62);
-      var g1 = audioCtx.createGain(); g1.gain.value = 0.22;
-      swish.connect(band); band.connect(g1); g1.connect(audioCtx.destination);
-      swish.start(now + 0.08);
-      // ② 탁: 종이가 내려앉는 소리
-      var pat = audioCtx.createBufferSource();
-      pat.buffer = noise(0.09, function (t) { return Math.pow(1 - t, 3); });
-      var low = audioCtx.createBiquadFilter(); low.type = "lowpass"; low.frequency.value = 1100;
-      var g2 = audioCtx.createGain(); g2.gain.value = 0.3;
-      pat.connect(low); low.connect(g2); g2.connect(audioCtx.destination);
-      pat.start(now + 0.72);
-    } catch (e) {}
-  }
 
   // 지금 보이는 면들이 차지하는 영역과, 그 안에서 누른 위치
   function spot(clientX, clientY) {

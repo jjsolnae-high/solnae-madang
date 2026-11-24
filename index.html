@@ -226,7 +226,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v2.0.3</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v2.0.4</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -563,6 +563,9 @@
       useMouseEvents: false           // 누르기·끌기·넘김 움직임은 아래에서 직접 다룬다
     });
     flip.loadFromHTML(inner.querySelectorAll(".page"));
+    // 넘김 도구는 첫 면과 마지막 면을 책 표지처럼 '딱딱한 종이'로 취급해 뻣뻣하게 넘긴다.
+    // 신문에는 표지가 없으므로 모든 면을 똑같이 부드러운 종이로 맞춘다.
+    flip.getPageCollection().getPages().forEach(function (p) { p.setDensity("soft"); });
     flip.on("flip", function (e) {
       pageIndex = e.data; updateControls();
       if (mainEl.scrollTop > 0) mainEl.scrollTo({ top: 0, behavior: "smooth" });   // 새 면은 맨 위부터

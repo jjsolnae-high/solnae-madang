@@ -73,7 +73,7 @@
   }
   #stage { width: 100%; height: 100%; position: relative; overflow: visible; }
   #status { position: fixed; }
-  #book { position: absolute; transition: transform .5s ease; filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
+  #book { position: absolute; transition: transform 1.1s cubic-bezier(.45, 0, .2, 1); filter: drop-shadow(0 18px 28px rgba(0,0,0,.5)); }
   .page { background: var(--paper); overflow: hidden; }
   .page img, .page canvas {
     width: 100%; height: 100%; display: block; object-fit: fill;
@@ -226,7 +226,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="hint"></span><span id="copyright"></span> · v2.0.4</footer>
+<footer><span id="hint"></span><span id="copyright"></span> · v2.0.5</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -566,6 +566,13 @@
     // 넘김 도구는 첫 면과 마지막 면을 책 표지처럼 '딱딱한 종이'로 취급해 뻣뻣하게 넘긴다.
     // 신문에는 표지가 없으므로 모든 면을 똑같이 부드러운 종이로 맞춘다.
     flip.getPageCollection().getPages().forEach(function (p) { p.setDensity("soft"); });
+    keepEndsClean(flip);
+    flip.on("changeState", function (e) {
+      // 한 장만 가운데에 놓여 있던 상태에서 넘기기 시작하면, 펼침 위치로 먼저 돌려놓는다
+      var b = $("book");
+      if (b && e.data !== "read" && e.data !== "fold_corner") b.style.transform = "";
+      if (e.data === "read") updateControls();
+    });
     flip.on("flip", function (e) {
       pageIndex = e.data; updateControls();
       if (mainEl.scrollTop > 0) mainEl.scrollTo({ top: 0, behavior: "smooth" });   // 새 면은 맨 위부터
@@ -588,6 +595,32 @@
       }
     }
     worker(); worker(); worker();
+  }
+
+  // 두 면 펼침에서 첫 면이나 마지막 면으로 넘어갈 때는 그 밑에 드러날 종이가 없다.
+  // 넘김 도구는 이때 원래 있던 면을 끝까지 그대로 남겨 두어 한 장이 더 있는 것처럼 보이므로,
+  // 종이가 넘어가며 지나간 자리만큼 그 면을 잘라 내어 빈 바닥이 보이게 한다.
+  function keepEndsClean(f) {
+    var render = f.getRender(), fc = f.getFlipController(), draw = render.drawFrame;
+    render.drawFrame = function () {
+      draw.call(render);
+      var calc = fc.calc;
+      if (!calc || render.getOrientation() !== "landscape") return;
+      var pc = f.getPageCollection(), dir = calc.getDirection();
+      var target = pc.getSpread()[pc.getCurrentSpreadIndex() + (dir === 0 ? 1 : -1)];
+      if (!target || target.length !== 1) return;
+      var stay = dir === 0 ? render.rightPage : render.leftPage;     // 넘어가는 종이 밑에 깔려 있던 면
+      if (!stay || !stay.getElement) return;
+      var rect = render.getRect(), pw = rect.pageWidth, H = rect.height;
+      var pts = calc.getBottomClipArea().filter(Boolean).map(function (p) {
+        return (dir === 0 ? p.x : pw - p.x).toFixed(1) + "px " + p.y.toFixed(1) + "px";
+      });
+      if (pts.length < 3) return;
+      var hole = "polygon(evenodd, 0 0, " + pw + "px 0, " + pw + "px " + H + "px, 0 " + H + "px, 0 0, " +
+                 pts.join(", ") + ", " + pts[0] + ")";
+      var el = stay.getElement();
+      el.style.clipPath = hole; el.style.webkitClipPath = hole;
+    };
   }
 
   function updateControls() {

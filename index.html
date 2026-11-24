@@ -207,7 +207,7 @@
   <button id="zoomClose" class="close" aria-label="확대 보기 닫기">닫기 ✕</button>
 </div>
 
-<footer><span id="copyright"></span> · v1.6.1</footer>
+<footer><span id="copyright"></span> · v1.7.0</footer>
 
 <script src="issues.js"></script>
 <script src="lib/page-flip.browser.js"></script>
@@ -322,25 +322,64 @@
     return data.pages[n];
   }
   // 한 면의 일부(또는 전체)를 캔버스에 그린다. 캔버스 크기 = 실제 화면 점 개수라서 흐려지지 않는다.
+  // 일반 모니터(배율 1)에서는 가는 본문 글씨가 옅게 나오므로, 두 배로 그린 뒤 줄이면서 획을 진하게 살린다.
+  function superSample() { return DPR() < 1.75 ? 2 : 1; }
   function drawPage(data, n, canvas, cssPageWidth, offX, offY) {
     var task = null, cancelled = false;
     var done = getPage(data, n).then(function (page) {
       if (cancelled) return false;
       var base = page.getViewport({ scale: 1 });
-      var dpr = DPR();
-      var vp = page.getViewport({ scale: cssPageWidth * dpr / base.width });
+      var dpr = DPR(), ss = superSample();
+      var vp = page.getViewport({ scale: cssPageWidth * dpr * ss / base.width });
+      var target = canvas;
+      if (ss > 1) {
+        target = document.createElement("canvas");
+        target.width = canvas.width * ss; target.height = canvas.height * ss;
+      }
       task = page.render({
-        canvasContext: canvas.getContext("2d", { alpha: false }),
+        canvasContext: target.getContext("2d", { alpha: false, willReadFrequently: ss > 1 }),
         viewport: vp,
-        transform: [1, 0, 0, 1, -(offX || 0) * dpr, -(offY || 0) * dpr],
+        transform: [1, 0, 0, 1, -(offX || 0) * dpr * ss, -(offY || 0) * dpr * ss],
         background: "#ffffff"
       });
-      return task.promise.then(function () { return true; });
+      return task.promise.then(function () {
+        if (cancelled) return false;
+        if (ss > 1) { shrinkDarken(target, canvas); target.width = target.height = 0; }
+        return true;
+      });
     }).catch(function (e) {
       if (e && e.name === "RenderingCancelledException") return false;
       console.error(e); return false;
     });
     return { done: done, cancel: function () { cancelled = true; if (task) task.cancel(); } };
+  }
+  // 2배 그림을 절반으로 줄인다. 네 점의 평균만 쓰면 가는 획이 회색으로 옅어지므로,
+  // 밝은 바탕 위의 어두운 획일수록 가장 어두운 점 쪽으로 당겨 준다. (사진처럼 어두운 곳은 거의 그대로)
+  function shrinkDarken(src, dst) {
+    var sw = src.width, w = dst.width, h = dst.height;
+    var sd = src.getContext("2d").getImageData(0, 0, sw, src.height).data;
+    var ctx = dst.getContext("2d", { alpha: false });
+    var out = ctx.createImageData(w, h), d = out.data;
+    var row = sw * 4;
+    for (var y = 0; y < h; y++) {
+      var i = y * 2 * row, o = y * w * 4;
+      for (var x = 0; x < w; x++, i += 8, o += 4) {
+        var j = i + row;
+        var mx = 0, k, a, b, c, e;
+        for (k = 0; k < 3; k++) {
+          a = sd[i + k]; b = sd[i + 4 + k]; c = sd[j + k]; e = sd[j + 4 + k];
+          var m = a > b ? a : b; if (c > m) m = c; if (e > m) m = e; if (m > mx) mx = m;
+        }
+        var bias = 0.6 * (mx / 255) * (mx / 255);
+        for (k = 0; k < 3; k++) {
+          a = sd[i + k]; b = sd[i + 4 + k]; c = sd[j + k]; e = sd[j + 4 + k];
+          var mn = a < b ? a : b; if (c < mn) mn = c; if (e < mn) mn = e;
+          d[o + k] = (a + b + c + e) * 0.25 * (1 - bias) + mn * bias;
+        }
+        d[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(out, 0, 0);
   }
 
   /* ── 견본 신문 (올린 PDF가 없을 때) ── */
@@ -597,7 +636,8 @@
     var box = zoomBox.getBoundingClientRect();
     // 화면보다 조금 넓게 그려 두어 살짝 움직여도 선명하게 (캔버스가 너무 커지지 않는 선에서)
     var pad = Math.min(vw, vh) * 0.3;
-    while (pad > 0 && (vw + 2 * pad) * (vh + 2 * pad) * dpr * dpr > 14e6) pad = Math.floor(pad / 2);
+    var ss = superSample();
+    while (pad > 0 && (vw + 2 * pad) * (vh + 2 * pad) * dpr * dpr * ss * ss > 16e6) pad = Math.floor(pad / 2);
     zPages.forEach(function (zp) {
       var r = zp.el.getBoundingClientRect();
       var snap = function (v) { return Math.round(v * dpr) / dpr; };   // 화면 점 격자에 맞춘다
